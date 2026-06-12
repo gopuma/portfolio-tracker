@@ -12,6 +12,21 @@ function fmtPct(n, digits = 1) {
 }
 const cls = n => (n == null ? '' : n > 0 ? 'up' : n < 0 ? 'down' : '');
 
+// Clickable, sortable table header. Shows ▲/▼ on the active column.
+function SortTh({ label, col, num, sortKey, sortDir, onSort }) {
+  const active = sortKey === col;
+  return (
+    <th
+      className={num ? 'num' : undefined}
+      onClick={() => onSort(col)}
+      style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+      title="Click to sort"
+    >
+      {label}<span style={{ opacity: active ? 1 : 0.25, marginLeft: 4 }}>{active ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>
+    </th>
+  );
+}
+
 export default function PortfolioList() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -19,6 +34,8 @@ export default function PortfolioList() {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [sortKey, setSortKey] = useState(null);  // column to sort portfolios by
+  const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
   const navigate = useNavigate();
 
   const load = () => api.portfolios().then(setData).catch(e => setErr(e.message));
@@ -44,6 +61,27 @@ export default function PortfolioList() {
     try { await api.deletePortfolio(id); load(); }
     catch (e) { window.alert(`Failed: ${e.message}`); }
   };
+
+  // Click a header to sort by that column; click again to flip direction.
+  const onSort = (key) => {
+    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+  const sortedPortfolios = (() => {
+    const rows = data?.portfolios || [];
+    if (!sortKey) return rows;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const isBlank = v => v == null || v === '' || (typeof v === 'number' && isNaN(v));
+    return [...rows].sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey];
+      // Always sort blanks/nulls to the bottom, regardless of direction.
+      if (isBlank(av) && isBlank(bv)) return 0;
+      if (isBlank(av)) return 1;
+      if (isBlank(bv)) return -1;
+      if (typeof av === 'string' || typeof bv === 'string') return String(av).localeCompare(String(bv)) * dir;
+      return (av - bv) * dir;
+    });
+  })();
 
   return (
     <>
@@ -77,18 +115,18 @@ export default function PortfolioList() {
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th className="num">Holdings</th>
-                  <th className="num">Market Value</th>
-                  <th className="num">Inception</th>
-                  <th className="num">1Y</th>
-                  <th className="num">3Y</th>
-                  <th className="num">5Y</th>
+                  <SortTh label="Name" col="name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="Holdings" col="holdings_count" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="Market Value" col="market_value" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="Inception" col="return_inception" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="1Y" col="return_1y" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="3Y" col="return_3y" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="5Y" col="return_5y" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {data.portfolios.map(p => (
+                {sortedPortfolios.map(p => (
                   <tr key={p.id}>
                     <td><Link to={`/portfolios/${p.id}`}>{p.name}</Link></td>
                     <td className="num">{p.holdings_count}</td>
