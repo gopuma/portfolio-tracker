@@ -12,6 +12,16 @@ function fmtPct(n, digits = 2) {
   return `${s}%`;
 }
 
+// "Data as of" caption from a YYYY-MM-DD string. Parsed as local time
+// (not UTC) so the date doesn't slip a day in negative-offset zones.
+function AsOf({ date }) {
+  if (!date) return null;
+  const dt = new Date(`${String(date).slice(0, 10)}T00:00:00`);
+  if (isNaN(dt.getTime())) return null;
+  const s = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>Data as of {s}</span>;
+}
+
 export default function PortfolioOverview() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -54,8 +64,15 @@ export default function PortfolioOverview() {
   const bullish = items.filter(i => (i.predicted_return ?? 0) > 0.005).length;
   const bearish = items.filter(i => (i.predicted_return ?? 0) < -0.005).length;
 
+  // Freshness of the KPI tiles: latest close date across the tracked instruments.
+  const asOfDates = items.map(i => (i.latest_date || '').slice(0, 10)).filter(Boolean);
+  const asOf = asOfDates.length ? asOfDates.reduce((a, b) => (a > b ? a : b)) : null;
+
   return (
     <>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+        <AsOf date={asOf} />
+      </div>
       <div className="grid-6">
         <Metric label="Tracked Instruments" value={items.length} />
         <Metric label="Avg 30-day Return" value={fmtPct(avg30)} color={avg30 >= 0 ? 'up' : 'down'} />

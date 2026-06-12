@@ -1,19 +1,37 @@
 import express from 'express';
 import { query } from '../db.js';
 import { ensureTrackedInstrument } from '../services/instrumentService.js';
+import { fetchQuotes } from '../services/priceFetcher.js';
 
 export const portfoliosRouter = express.Router();
 
 const MAX_HOLDINGS = 30;
 
+// Cache the live FX rate briefly so back-to-back portfolio reads don't each hit Yahoo.
+const FX_TTL_MS = 60_000;
+let fxCache = { rate: null, at: 0 };
+
 // Latest USD/KRW (KRW per USD) for converting holding values to a common base.
+// Prefers the live Yahoo quote so conversions use the current rate, falling back
+// to the most recent stored EOD close if the live lookup is unavailable.
 async function getKrwPerUsd() {
+  const now = Date.now();
+  if (fxCache.rate && now - fxCache.at < FX_TTL_MS) return fxCache.rate;
+
+  try {
+    const q = await fetchQuotes(['KRW=X']);
+    const live = q['KRW=X']?.price;
+    if (live && live > 0) { fxCache = { rate: Number(live), at: now }; return fxCache.rate; }
+  } catch { /* fall back to the stored close below */ }
+
   const rows = await query(
     `SELECT lp.close_px FROM instruments i
        JOIN v_latest_prices lp ON lp.instrument_id = i.id
       WHERE i.symbol = 'KRW=X'`
   );
-  return rows[0] ? Number(rows[0].close_px) : null;
+  const rate = rows[0] ? Number(rows[0].close_px) : null;
+  if (rate) fxCache = { rate, at: now };
+  return rate;
 }
 
 function convert(amount, currency, base, krwPerUsd) {
@@ -28,7 +46,7 @@ function convert(amount, currency, base, krwPerUsd) {
 // Holdings with latest + historical closes for one portfolio.
 async function loadHoldings(portfolioId) {
   return query(
-    `SELECT h.id, h.symbol, h.shares, h.cost_price, h.currency,
+    `SELECT h.id, h.symbol, h.account, h.shares, h.cost_price, h.currency,
             i.id AS instrument_id, i.display_name,
             lp.close_px AS latest_close, lp.trade_date AS latest_date,
             (SELECT close_px FROM prices p WHERE p.instrument_id = i.id AND p.trade_date <= DATE_SUB(CURDATE(), INTERVAL 1 YEAR) ORDER BY p.trade_date DESC LIMIT 1) AS close_1y,
@@ -58,6 +76,7 @@ function computePortfolio(rows, base, krwPerUsd) {
     return {
       id: r.id,
       symbol: r.symbol,
+      account: r.account || '',
       display_name: r.display_name,
       currency: r.currency,
       shares,
@@ -173,6 +192,10 @@ portfoliosRouter.post('/:id/holdings', async (req, res, next) => {
     const shares = Number(req.body?.shares);
     if (!Number.isFinite(shares) || shares <= 0) return res.status(400).json({ error: 'shares must be a positive number' });
 
+    // Optional account label — lets the same ticker be held more than once per
+    // portfolio (one lot per account). Same symbol + same account = edit.
+    const account = (req.body?.account || '').trim().slice(0, 64);
+
     let inst, latestClose;
     try {
       const r = await ensureTrackedInstrument(req.body?.symbol);
@@ -181,8 +204,8 @@ portfoliosRouter.post('/:id/holdings', async (req, res, next) => {
       return res.status(e.status || 500).json({ error: e.message });
     }
 
-    // Capacity check (existing symbol = edit, allowed even at the cap).
-    const existing = await query(`SELECT id FROM portfolio_holdings WHERE portfolio_id = ? AND symbol = ?`, [pid, inst.symbol]);
+    // Capacity check (existing symbol+account = edit, allowed even at the cap).
+    const existing = await query(`SELECT id FROM portfolio_holdings WHERE portfolio_id = ? AND symbol = ? AND account = ?`, [pid, inst.symbol, account]);
     if (existing.length === 0) {
       const [{ n }] = await query(`SELECT COUNT(*) AS n FROM portfolio_holdings WHERE portfolio_id = ?`, [pid]);
       if (Number(n) >= MAX_HOLDINGS) return res.status(400).json({ error: `Portfolio is full (max ${MAX_HOLDINGS} holdings)` });
@@ -193,21 +216,21 @@ portfoliosRouter.post('/:id/holdings', async (req, res, next) => {
     if (price == null || !(price > 0)) return res.status(400).json({ error: 'No price available — provide a custom price' });
 
     await query(
-      `INSERT INTO portfolio_holdings (portfolio_id, symbol, shares, cost_price, currency)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO portfolio_holdings (portfolio_id, symbol, account, shares, cost_price, currency)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE shares = VALUES(shares), cost_price = VALUES(cost_price), currency = VALUES(currency)`,
-      [pid, inst.symbol, shares, price, inst.currency]
+      [pid, inst.symbol, account, shares, price, inst.currency]
     );
-    res.status(201).json({ symbol: inst.symbol, shares, cost_price: price, currency: inst.currency, latest_close: latestClose });
+    res.status(201).json({ symbol: inst.symbol, account, shares, cost_price: price, currency: inst.currency, latest_close: latestClose });
   } catch (e) { next(e); }
 });
 
-/** Update a holding's shares and/or cost price. Body: { shares?, cost_price? } */
+/** Update a holding's shares, cost price, and/or account. Body: { shares?, cost_price?, account? } */
 portfoliosRouter.patch('/:id/holdings/:holdingId', async (req, res, next) => {
   try {
     const sets = [];
     const params = [];
-    const { shares, cost_price } = req.body || {};
+    const { shares, cost_price, account } = req.body || {};
     if (shares !== undefined) {
       const n = Number(shares);
       if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ error: 'shares must be a positive number' });
@@ -218,9 +241,20 @@ portfoliosRouter.patch('/:id/holdings/:holdingId', async (req, res, next) => {
       if (!Number.isFinite(c) || c <= 0) return res.status(400).json({ error: 'cost_price must be a positive number' });
       sets.push('cost_price = ?'); params.push(c);
     }
+    if (account !== undefined) {
+      // Account may be blank (clears the label); keyed by (portfolio_id, symbol, account).
+      sets.push('account = ?'); params.push(String(account).trim().slice(0, 64));
+    }
     if (sets.length === 0) return res.status(400).json({ error: 'nothing to update' });
     params.push(req.params.holdingId, req.params.id);
-    const r = await query(`UPDATE portfolio_holdings SET ${sets.join(', ')} WHERE id = ? AND portfolio_id = ?`, params);
+    let r;
+    try {
+      r = await query(`UPDATE portfolio_holdings SET ${sets.join(', ')} WHERE id = ? AND portfolio_id = ?`, params);
+    } catch (e) {
+      // Renaming the account onto a symbol+account that already exists in this portfolio.
+      if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'This ticker is already held under that account — change the account or merge the lots.' });
+      throw e;
+    }
     if (r.affectedRows === 0) return res.status(404).json({ error: 'Holding not found' });
     res.json({ updated: 1 });
   } catch (e) { next(e); }

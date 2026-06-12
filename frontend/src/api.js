@@ -54,6 +54,7 @@ export const api = {
   instrument:   (symbol)                 => get(`/instruments/${encodeURIComponent(symbol)}`),
   prices:       (symbol, days = 90)      => get(`/prices/${encodeURIComponent(symbol)}?days=${days}`),
   fxRate:       (days = 180)             => get(`/prices/${encodeURIComponent('KRW=X')}?days=${days}`),
+  fxLive:       ()                       => get(`/prices/${encodeURIComponent('KRW=X')}/live`),
   vix:          (days = 180)             => get(`/prices/${encodeURIComponent('^VIX')}?days=${days}`),
   sentiment:    (symbol, days = 7)       => get(`/sentiment/${encodeURIComponent(symbol)}?days=${days}`),
   prediction:   (symbol)                 => get(`/predictions/${encodeURIComponent(symbol)}`),

@@ -58,11 +58,13 @@ export async function fetchQuoteMeta(symbol) {
 /**
  * Search Yahoo for tickers by name or symbol (e.g. "apple" or "AAPL").
  * Returns a short list of equity/ETF/fund/index matches for a picker.
+ * `opts` is merged into Yahoo's query options — pass { region, lang } to bias
+ * the search toward a market (e.g. region:'KR', lang:'ko-KR' for Korean listings).
  */
-export async function searchSymbols(q, count = 8) {
+export async function searchSymbols(q, count = 8, opts = {}) {
   try {
     // validateResult:false — Yahoo's search payload doesn't match the lib's strict schema (e.g. typeDisp casing).
-    const r = await yahooFinance.search(q, { quotesCount: count, newsCount: 0 }, { validateResult: false });
+    const r = await yahooFinance.search(q, { quotesCount: count, newsCount: 0, ...opts }, { validateResult: false });
     return (r?.quotes || [])
       .filter(x => x.symbol && ['EQUITY', 'ETF', 'MUTUALFUND', 'INDEX'].includes(x.quoteType))
       .map(x => ({

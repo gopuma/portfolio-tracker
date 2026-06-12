@@ -16,6 +16,15 @@ function fmtPct(n, d = 1) {
   return `${(Number(n) * 100).toFixed(d)}%`;
 }
 const cls = n => (n == null ? '' : n > 0 ? 'up' : n < 0 ? 'down' : '');
+// Convert a native-currency amount into the portfolio base currency (mirrors the
+// backend's convert()) so KRW holdings (e.g. the KRX gold spot) read in dollars.
+function toBase(amount, currency, base, krwPerUsd) {
+  if (amount == null) return null;
+  if (currency === base || !krwPerUsd) return amount;
+  if (base === 'USD' && currency === 'KRW') return amount / krwPerUsd;
+  if (base === 'KRW' && currency === 'USD') return amount * krwPerUsd;
+  return amount;
+}
 const field = { background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', padding: '6px 8px', fontSize: 13 };
 // Subtle cue that a value is double-click editable.
 const editableHint = { borderBottom: '1px dashed var(--text-dim)', paddingBottom: 1 };
@@ -34,7 +43,11 @@ export default function PortfolioDetail() {
   const [shareDraft, setShareDraft] = useState('');
   const [editCostId, setEditCostId] = useState(null);
   const [costDraft, setCostDraft] = useState('');
+  const [editAccountId, setEditAccountId] = useState(null);
+  const [accountDraft, setAccountDraft] = useState('');
   const [mptOpen, setMptOpen] = useState(false);
+  const [sortKey, setSortKey] = useState(null);  // column to sort holdings by
+  const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
 
   const load = () => api.portfolioById(id).then(setData).catch(e => setErr(e.message));
   useEffect(() => { setLoading(true); load().finally(() => setLoading(false)); /* eslint-disable-next-line */ }, [id]);
@@ -63,6 +76,37 @@ export default function PortfolioDetail() {
   const full = data.holdings.length >= data.max_holdings;
   const hasHoldings = data.holdings.length > 0;
 
+  // Won-denominated mirror of the value totals (shown only for non-KRW portfolios).
+  const krwPerUsd = data.krw_per_usd;
+  const toKrw = (v) => (v == null ? null : ccy === 'KRW' ? v : (krwPerUsd ? v * krwPerUsd : null));
+  const showKrwCards = ccy !== 'KRW' && krwPerUsd != null;
+
+  // MPT optimizes over distinct instruments, so collapse multiple lots of the
+  // same symbol into one, summing their weights.
+  const mptWeights = {};
+  for (const h of data.holdings) mptWeights[h.symbol] = (mptWeights[h.symbol] || 0) + (h.weight || 0);
+  const mptSymbols = Object.keys(mptWeights);
+
+  // Click a header to sort by that column; click again to flip direction.
+  const onSort = (key) => {
+    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+  const sortedHoldings = (() => {
+    if (!sortKey) return data.holdings;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const isBlank = v => v == null || v === '' || (typeof v === 'number' && isNaN(v));
+    return [...data.holdings].sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey];
+      // Always sort blanks/nulls to the bottom, regardless of direction.
+      if (isBlank(av) && isBlank(bv)) return 0;
+      if (isBlank(av)) return 1;
+      if (isBlank(bv)) return -1;
+      if (typeof av === 'string' || typeof bv === 'string') return String(av).localeCompare(String(bv)) * dir;
+      return (av - bv) * dir;
+    });
+  })();
+
   const exitRemoveMode = () => { setRemoveMode(false); setSelected(new Set()); };
   const toggle = (hid) => setSelected(prev => {
     const n = new Set(prev);
@@ -87,6 +131,15 @@ export default function PortfolioDetail() {
     setEditCostId(null);
     if (!(n > 0) || n === Number(h.cost_price)) return;
     try { await api.updateHolding(id, h.id, { cost_price: n }); load(); }
+    catch (e) { window.alert(`Update failed: ${e.message}`); }
+  };
+
+  const startEditAccount = (h) => { setEditAccountId(h.id); setAccountDraft(h.account || ''); };
+  const saveAccount = async (h) => {
+    const v = accountDraft.trim();
+    setEditAccountId(null);
+    if (v === (h.account || '')) return; // unchanged (account may legitimately be blank)
+    try { await api.updateHolding(id, h.id, { account: v }); load(); }
     catch (e) { window.alert(`Update failed: ${e.message}`); }
   };
 
@@ -146,6 +199,14 @@ export default function PortfolioDetail() {
         <Metric label="3Y / 5Y" value={`${fmtPct(t.return_3y)} / ${fmtPct(t.return_5y)}`} />
       </div>
 
+      {showKrwCards && (
+        <div className="grid-6" style={{ marginTop: 16 }}>
+          <Metric label="Market Value (KRW)" value={fmtMoney(toKrw(t.market_value), 'KRW')} />
+          <Metric label="Cost Basis (KRW)" value={fmtMoney(toKrw(t.cost_basis), 'KRW')} />
+          <Metric label="Total Gain (KRW)" value={fmtMoney(toKrw(t.gain), 'KRW')} color={cls(t.gain)} />
+        </div>
+      )}
+
       <AddHoldingForm portfolioId={id} full={full} onAdded={load} />
 
       <div className="panel">
@@ -180,20 +241,21 @@ export default function PortfolioDetail() {
                       <input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all" style={{ cursor: 'pointer', width: 18, height: 18 }} />
                     </th>
                   )}
-                  <th>Symbol</th>
-                  <th className="num">Shares *</th>
-                  <th className="num">Cost *</th>
-                  <th className="num">Last Close</th>
-                  <th className="num">Value ({ccy})</th>
-                  <th className="num">Weight</th>
-                  <th className="num">Inception</th>
-                  <th className="num">1Y</th>
-                  <th className="num">3Y</th>
-                  <th className="num">5Y</th>
+                  <SortTh label="Symbol" col="symbol" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="Account *" col="account" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="Shares *" col="shares" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="Cost *" col="cost_price" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="Last Close" col="latest_close" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label={`Value (${ccy})`} col="market_value_base" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="Weight" col="weight" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="Inception" col="return_inception" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="1Y" col="return_1y" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="3Y" col="return_3y" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="5Y" col="return_5y" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                 </tr>
               </thead>
               <tbody>
-                {data.holdings.map(h => (
+                {sortedHoldings.map(h => (
                   <tr key={h.id} style={removeMode && selected.has(h.id) ? { background: 'var(--panel-2)' } : undefined}>
                     {removeMode && (
                       <td>
@@ -203,6 +265,27 @@ export default function PortfolioDetail() {
                     <td>
                       <Link to={`/instruments/${encodeURIComponent(h.symbol)}`}>{h.symbol}</Link>
                       <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>{h.display_name}</div>
+                    </td>
+                    <td
+                      onDoubleClick={() => !removeMode && startEditAccount(h)}
+                      title={removeMode ? undefined : 'Double-click to edit account'}
+                      style={removeMode ? { fontSize: 12 } : { cursor: 'pointer', fontSize: 12 }}
+                    >
+                      {editAccountId === h.id ? (
+                        <input
+                          autoFocus
+                          type="text"
+                          maxLength={64}
+                          value={accountDraft}
+                          onChange={e => setAccountDraft(e.target.value)}
+                          onBlur={() => saveAccount(h)}
+                          onKeyDown={e => { if (e.key === 'Enter') saveAccount(h); else if (e.key === 'Escape') setEditAccountId(null); }}
+                          placeholder="e.g. Roth"
+                          style={{ ...field, width: 120 }}
+                        />
+                      ) : (
+                        <span style={{ ...editableHint, color: h.account ? 'var(--text)' : 'var(--text-dim)' }}>{h.account || '—'}</span>
+                      )}
                     </td>
                     <td
                       className="num"
@@ -245,10 +328,20 @@ export default function PortfolioDetail() {
                           style={{ ...field, width: 100, textAlign: 'right' }}
                         />
                       ) : (
-                        <><span style={editableHint}>{fmtNum(h.cost_price)}</span> <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>{h.currency}</span></>
+                        <>
+                          <span style={editableHint}>{fmtNum(h.cost_price)}</span> <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>{h.currency}</span>
+                          {h.currency !== ccy && h.cost_price != null && data.krw_per_usd && (
+                            <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>≈ {fmtMoney(toBase(h.cost_price, h.currency, ccy, data.krw_per_usd), ccy, 2)}</div>
+                          )}
+                        </>
                       )}
                     </td>
-                    <td className="num">{fmtNum(h.latest_close)}</td>
+                    <td className="num">
+                      {fmtNum(h.latest_close)}
+                      {h.currency !== ccy && h.latest_close != null && data.krw_per_usd && (
+                        <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>≈ {fmtMoney(toBase(h.latest_close, h.currency, ccy, data.krw_per_usd), ccy, 2)}</div>
+                      )}
+                    </td>
                     <td className="num">{fmtMoney(h.market_value_base, ccy)}</td>
                     <td className="num">{fmtPct(h.weight, 0)}</td>
                     <td className={`num ${cls(h.return_inception)}`}>{fmtPct(h.return_inception)}</td>
@@ -264,10 +357,10 @@ export default function PortfolioDetail() {
             </p>
           </div>
         )}
-        {data.holdings.length >= 2 && (mptOpen ? (
+        {mptSymbols.length >= 2 && (mptOpen ? (
           <MptPanel
-            symbols={data.holdings.map(h => h.symbol)}
-            currentWeights={Object.fromEntries(data.holdings.map(h => [h.symbol, h.weight]))}
+            symbols={mptSymbols}
+            currentWeights={mptWeights}
             onClose={() => setMptOpen(false)}
           />
         ) : (
@@ -289,6 +382,21 @@ function Metric({ label, value, color }) {
   );
 }
 
+// Clickable, sortable table header. Shows ▲/▼ on the active column.
+function SortTh({ label, col, num, sortKey, sortDir, onSort }) {
+  const active = sortKey === col;
+  return (
+    <th
+      className={num ? 'num' : undefined}
+      onClick={() => onSort(col)}
+      style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+      title="Click to sort"
+    >
+      {label}<span style={{ opacity: active ? 1 : 0.25, marginLeft: 4 }}>{active ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>
+    </th>
+  );
+}
+
 // Register a ticker by searching for it by name or symbol, picking a match, then
 // entering volume. Price auto-fills with the latest close but can be overridden.
 function AddHoldingForm({ portfolioId, full, onAdded }) {
@@ -296,11 +404,13 @@ function AddHoldingForm({ portfolioId, full, onAdded }) {
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [focused, setFocused] = useState(false); // search box has focus
   const [selected, setSelected] = useState(null); // { symbol, name }
   const [meta, setMeta] = useState(null);          // { currency, price }
   const [metaLoading, setMetaLoading] = useState(false);
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState('');
+  const [account, setAccount] = useState(''); // optional label so the same ticker can be added per account
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [ok, setOk] = useState(null);
@@ -348,7 +458,7 @@ function AddHoldingForm({ portfolioId, full, onAdded }) {
     }
   };
 
-  const clearSelection = () => { setSelected(null); setMeta(null); setQuery(''); setShares(''); setPrice(''); setErr(null); };
+  const clearSelection = () => { setSelected(null); setMeta(null); setQuery(''); setShares(''); setPrice(''); setAccount(''); setErr(null); };
 
   const submit = async (e) => {
     e?.preventDefault();
@@ -358,9 +468,10 @@ function AddHoldingForm({ portfolioId, full, onAdded }) {
     try {
       const body = { symbol: selected.symbol, shares: sh };
       if (price !== '' && Number(price) > 0) body.price = Number(price);
+      if (account.trim()) body.account = account.trim();
       const r = await api.addHolding(portfolioId, body);
-      setOk(`Added ${r.symbol} — ${fmtNum(r.shares, 0)} @ ${fmtNum(r.cost_price)} ${r.currency}`);
-      setSelected(null); setMeta(null); setQuery(''); setShares(''); setPrice('');
+      setOk(`Added ${r.symbol}${r.account ? ` (${r.account})` : ''} — ${fmtNum(r.shares, 0)} @ ${fmtNum(r.cost_price)} ${r.currency}`);
+      setSelected(null); setMeta(null); setQuery(''); setShares(''); setPrice(''); setAccount('');
       onAdded?.();
     } catch (e2) {
       setErr(e2.message);
@@ -381,12 +492,14 @@ function AddHoldingForm({ portfolioId, full, onAdded }) {
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            onFocus={() => results.length && setShowResults(true)}
+            onFocus={() => { setFocused(true); if (results.length) setShowResults(true); }}
+            // Delay so a click on a result registers before the dropdown/indicator hides.
+            onBlur={() => setTimeout(() => { setFocused(false); setShowResults(false); }, 150)}
             onKeyDown={onSearchKeyDown}
             placeholder="e.g. Apple, Tesla, Samsung, ISRG…"
             style={{ ...field, width: '100%' }}
           />
-          {searching && <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>Searching…</div>}
+          {focused && searching && <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>Searching…</div>}
           {showResults && results.length > 0 && (
             <div style={{ position: 'absolute', zIndex: 10, left: 0, right: 0, marginTop: 4, background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 6, maxHeight: 280, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
               {results.map((r, i) => (
@@ -405,7 +518,7 @@ function AddHoldingForm({ portfolioId, full, onAdded }) {
             </div>
           )}
           {showResults && !searching && query.trim().length >= 2 && results.length === 0 && (
-            <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 6 }}>No matches.</div>
+            <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 6 }}>Not found in the US or Korean markets.</div>
           )}
         </div>
       ) : (
@@ -427,6 +540,9 @@ function AddHoldingForm({ portfolioId, full, onAdded }) {
           <Labeled label="Price (cost basis)">
             <input type="number" min={0} step="any" value={price} onChange={e => setPrice(e.target.value)} placeholder="latest close" disabled={busy} style={{ ...field, width: 130 }} />
           </Labeled>
+          <Labeled label="Account (optional)">
+            <input type="text" value={account} onChange={e => setAccount(e.target.value)} placeholder="e.g. Roth, 401k" disabled={busy} maxLength={64} style={{ ...field, width: 140 }} />
+          </Labeled>
           <button className="btn" type="submit" disabled={busy || !(Number(shares) > 0)}>
             {busy ? 'Adding…' : 'Add holding'}
           </button>
@@ -437,8 +553,9 @@ function AddHoldingForm({ portfolioId, full, onAdded }) {
       )}
       <p style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 0, marginTop: 12, lineHeight: 1.6 }}>
         Search a company by name or symbol and pick a match. <strong style={{ color: 'var(--text)' }}>Price</strong> auto-fills with the
-        latest close — leave it to use that as your cost basis, or enter a custom purchase price. New tickers are auto-tracked and
-        backfilled (~5y) so returns work.
+        latest close — leave it to use that as your cost basis, or enter a custom purchase price. Use <strong style={{ color: 'var(--text)' }}>Account</strong> to
+        hold the same ticker more than once (e.g. across brokerage accounts); same ticker + same account updates the existing lot. New
+        tickers are auto-tracked and backfilled (~5y) so returns work.
       </p>
     </div>
   );

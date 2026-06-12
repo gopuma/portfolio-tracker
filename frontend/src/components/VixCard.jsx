@@ -11,6 +11,16 @@ function fmtPct(n, digits = 2) {
   return `${(Number(n) * 100).toFixed(digits)}%`;
 }
 
+// "Data as of" caption from a YYYY-MM-DD string. Parsed as local time
+// (not UTC) so the date doesn't slip a day in negative-offset zones.
+function AsOf({ date }) {
+  if (!date) return null;
+  const dt = new Date(`${String(date).slice(0, 10)}T00:00:00`);
+  if (isNaN(dt.getTime())) return null;
+  const s = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>Data as of {s}</span>;
+}
+
 const PRESETS = [
   { label: '6M', days: 180 },
   { label: '1Y', days: 365 },
@@ -69,7 +79,10 @@ export default function VixCard() {
   return (
     <div className="panel">
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <h2 style={{ margin: 0 }}>VIX — Volatility Index</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <h2 style={{ margin: 0 }}>VIX — Volatility Index</h2>
+          <AsOf date={chartData.at(-1)?.date} />
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {PRESETS.map(p => (
             <button key={p.label} className={`btn ${days === p.days ? '' : 'ghost'}`} onClick={() => { setDays(p.days); setDraft(String(p.days)); }}>

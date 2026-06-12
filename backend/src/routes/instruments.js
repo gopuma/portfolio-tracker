@@ -74,18 +74,78 @@ instrumentsRouter.get('/', async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
+const isKoreanListing = (s) => /\.(KS|KQ)$/i.test(s);
+
 /**
- * Search tickers by name or symbol. Optional ?market=US|KR restricts results to
- * that market's listings (Korean tickers carry a .KS/.KQ suffix; US ones don't).
+ * Tracked instruments in our DB that match by symbol or name. Covers synthetic
+ * tickers that aren't on Yahoo — notably the KRX gold spot (KRX-GOLD-SPOT, shown
+ * as "Gold: KRX" on the Overview), so it can be registered into a portfolio.
+ */
+async function searchLocalInstruments(q) {
+  const like = `%${q}%`;
+  const rows = await query(
+    `SELECT symbol, display_name, market, asset_class
+       FROM instruments
+      WHERE is_active = 1 AND (symbol LIKE ? OR display_name LIKE ?)
+      ORDER BY market, symbol
+      LIMIT 8`,
+    [like, like]
+  );
+  return rows.map(r => ({
+    symbol: r.symbol,
+    name: r.display_name || r.symbol,
+    exchange: r.market === 'KR' ? 'KRX' : (r.market || ''),
+    type: r.asset_class,
+  }));
+}
+
+/**
+ * Search tickers by name or symbol.
+ *   ?market=US|KR  → restrict to that market's listings (used by the Overview "+ Add ticker").
+ *   no market      → seamless cross-market search for the portfolio "Register a Ticker" card:
+ *                    US listings first, then Korean listings (.KS/.KQ), then any matching
+ *                    locally-tracked instruments (e.g. the KRX gold spot), merged and de-duped.
+ * Korean tickers carry a .KS/.KQ suffix; US ones don't.
  */
 instrumentsRouter.get('/search', async (req, res, next) => {
   try {
     const q = (req.query.q || '').trim();
     if (q.length < 2) return res.json({ results: [] });
-    let results = await searchSymbols(q);
     const market = req.query.market;
-    if (market === 'KR') results = results.filter(r => /\.(KS|KQ)$/i.test(r.symbol));
-    else if (market === 'US') results = results.filter(r => !r.symbol.includes('.'));
+
+    if (market === 'US' || market === 'KR') {
+      let results = await searchSymbols(q);
+      results = results.filter(r => market === 'KR' ? isKoreanListing(r.symbol) : !r.symbol.includes('.'));
+      return res.json({ results });
+    }
+
+    // Search US first, then the Korean market, so a company is found in either
+    // without the user picking a market. Two Yahoo searches: the default
+    // (US/global) and one biased to Korea to surface .KS/.KQ listings reliably,
+    // plus our own DB for synthetic instruments Yahoo doesn't carry.
+    const [usHits, krHits, localHits] = await Promise.all([
+      searchSymbols(q),
+      searchSymbols(q, 8, { region: 'KR', lang: 'ko-KR' }),
+      searchLocalInstruments(q),
+    ]);
+
+    const seen = new Set();
+    const results = [];
+    // US listings first…
+    for (const r of usHits) {
+      if (isKoreanListing(r.symbol) || seen.has(r.symbol)) continue;
+      seen.add(r.symbol); results.push(r);
+    }
+    // …then Korean listings (from either search)…
+    for (const r of [...usHits, ...krHits]) {
+      if (!isKoreanListing(r.symbol) || seen.has(r.symbol)) continue;
+      seen.add(r.symbol); results.push(r);
+    }
+    // …then any locally-tracked instruments Yahoo didn't already cover.
+    for (const r of localHits) {
+      if (seen.has(r.symbol)) continue;
+      seen.add(r.symbol); results.push(r);
+    }
     res.json({ results });
   } catch (e) { next(e); }
 });
@@ -96,8 +156,22 @@ instrumentsRouter.get('/lookup', async (req, res, next) => {
     const symbol = (req.query.symbol || '').trim();
     if (!symbol) return res.status(400).json({ error: 'symbol query param is required' });
     const meta = await fetchQuoteMeta(/^\d{6}$/.test(symbol) ? `${symbol}.KS` : symbol);
-    if (!meta) return res.status(404).json({ error: `Ticker "${symbol}" not found on Yahoo Finance` });
-    res.json(meta);
+    if (meta) return res.json(meta);
+    // Not on Yahoo (e.g. synthetic KRX-GOLD-SPOT) — fall back to the tracked
+    // instrument's latest stored close so the form can still auto-fill a price.
+    const inst = await getInstrument(symbol);
+    if (inst) {
+      const latest = await query(`SELECT close_px FROM v_latest_prices WHERE instrument_id = ?`, [inst.id]);
+      return res.json({
+        symbol: inst.symbol,
+        name: inst.display_name || inst.symbol,
+        currency: inst.currency || null,
+        price: latest[0] ? Number(latest[0].close_px) : null,
+        quote_type: inst.asset_class || null,
+        exchange: inst.market || null,
+      });
+    }
+    return res.status(404).json({ error: `Ticker "${symbol}" not found on Yahoo Finance` });
   } catch (e) { next(e); }
 });
 

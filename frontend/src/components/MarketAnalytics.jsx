@@ -14,6 +14,22 @@ function fmtPct(n, d = 1) {
 }
 const cls = n => (n == null ? '' : n > 0 ? 'up' : n < 0 ? 'down' : '');
 
+// "Data as of" caption from a YYYY-MM-DD string. Parsed as local time
+// (not UTC) so the date doesn't slip a day in negative-offset zones.
+function AsOf({ date }) {
+  if (!date) return null;
+  const dt = new Date(`${String(date).slice(0, 10)}T00:00:00`);
+  if (isNaN(dt.getTime())) return null;
+  const s = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>Data as of {s}</span>;
+}
+
+// Latest close date across a set of instruments (each carrying `latest_date`).
+function maxLatestDate(items) {
+  const dates = (items || []).map(i => (i.latest_date || '').slice(0, 10)).filter(Boolean);
+  return dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : null;
+}
+
 function sentimentPill(s) {
   if (s == null) return <span className="pill">–</span>;
   const v = Number(s);
@@ -177,7 +193,10 @@ export default function MarketAnalytics({ instruments, reload }) {
   return (
     <div className="panel">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <h2 style={{ margin: 0 }}>Portfolio Analytics</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <h2 style={{ margin: 0 }}>Portfolio Analytics</h2>
+          <AsOf date={maxLatestDate(items)} />
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {PRESETS.map(p => (
             <button key={p.label} className={`btn ${days === p.days ? '' : 'ghost'}`} onClick={() => { setDays(p.days); setDraft(String(p.days)); }}>{p.label}</button>

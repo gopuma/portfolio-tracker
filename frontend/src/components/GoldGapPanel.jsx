@@ -44,6 +44,16 @@ function fmtPct(n, digits = 2) {
   return `${(Number(n) * 100).toFixed(digits)}%`;
 }
 
+// "Data as of" caption from a YYYY-MM-DD string. Parsed as local time
+// (not UTC) so the date doesn't slip a day in negative-offset zones.
+function AsOf({ date }) {
+  if (!date) return null;
+  const dt = new Date(`${String(date).slice(0, 10)}T00:00:00`);
+  if (isNaN(dt.getTime())) return null;
+  const s = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>Data as of {s}</span>;
+}
+
 function fmtKstTime(iso) {
   if (!iso) return '–';
   const d = new Date(iso);
@@ -73,6 +83,14 @@ export default function GoldGapPanel() {
 
   const krxAvgs = useMemo(() => computeAverages(krxHist), [krxHist]);
   const intlAvgs = useMemo(() => computeAverages(intlHist), [intlHist]);
+
+  // Latest close date across both series — the freshness of the trend/averages.
+  const lastDataDate = useMemo(() => {
+    const dates = [...(krxHist || []), ...(intlHist || [])]
+      .map(p => (p.trade_date || '').slice(0, 10))
+      .filter(Boolean);
+    return dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : null;
+  }, [krxHist, intlHist]);
 
   const [days, setDays] = useState(365); // chart period, default 1Y
   const [draft, setDraft] = useState('365'); // custom-period input buffer
@@ -119,8 +137,11 @@ export default function GoldGapPanel() {
 
   return (
     <div className="panel">
-      <h2>Gold: KRX vs International</h2>
-      <div className="grid-3">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <h2 style={{ margin: 0 }}>Gold: KRX vs International</h2>
+        <AsOf date={lastDataDate} />
+      </div>
+      <div className="grid-3" style={{ marginTop: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="metric-label">KRX (Korean Market) {live ? statusPill : null}</div>
           <div className="metric">{fmtNum(krx.latest_krw_per_g, 2)} <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>KRW/g</span></div>
