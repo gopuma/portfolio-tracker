@@ -78,4 +78,10 @@ export const api = {
   addHolding:    (id, body)              => postJson(`/portfolios/${id}/holdings`, body),
   updateHolding: (id, holdingId, body)   => patchJson(`/portfolios/${id}/holdings/${holdingId}`, body),
   removeHolding: (id, holdingId)         => del(`/portfolios/${id}/holdings/${holdingId}`),
+
+  // Prediction competition
+  leaderboard:   (horizon = 5, symbol = '') => get(`/leaderboard?horizon=${horizon}${symbol ? `&symbol=${encodeURIComponent(symbol)}` : ''}`),
+  models:        ()                      => get(`/models`),
+  modelPredictions: (symbol, horizon = 5) => get(`/competition/predictions/${encodeURIComponent(symbol)}?horizon=${horizon}`),
+  runBacktest:   (body = {})             => postJson(`/backtest`, body),
 };

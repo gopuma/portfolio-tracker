@@ -113,6 +113,49 @@ scaled by the 30-day historical volatility to produce a 5-day price target.
 
 See `backend/src/services/prediction.js`.
 
+## Prediction Competition (`/predictions`)
+
+Several forecasting methods compete to predict every watchlist stock at **5-day and
+30-day** horizons. A walk-forward backtest scores matured predictions against realized
+prices, and the **Predictions** page (next to Portfolios) ranks methods by **directional
+accuracy** (tie-break: RMSE skill vs the naive baseline) — sortable by any column, with a
+per-symbol predicted-vs-actual chart.
+
+**Models (Phase 1, pure Node/JS):** `naive-rw-v1` (mandatory baseline), `drift-v1`,
+`arima-v1` (AR(p) on differenced log price), `ets-v1` (Holt smoothing), `ridge-v1` (ridge
+on TA features), `montecarlo-v1` (GBM, 10k paths), and the existing `heuristic-v1`.
+
+**Models (Phase 2, Python ML sidecar):** `gbm-v1` (XGBoost) and `gbm-lgbm-v1` (LightGBM),
+both gradient boosting on the same TA features as `ridge-v1` (apples-to-apples). They run in
+a stateless FastAPI service (`ml-sidecar/`) that the backend calls over HTTP — see below.
+
+```bash
+docker compose up -d mysql ml-sidecar   # start DB + ML sidecar (first run builds the image)
+cd backend
+npm run migrate     # adds prediction_models, prediction_evaluations, model_scores
+npm run backtest    # walk-forward backfill (~180 trading days) so the board is populated
+```
+
+### ML sidecar (`ml-sidecar/`)
+
+A stateless Python service (FastAPI + XGBoost/LightGBM) that **only computes forecasts** —
+it never reads the database, which is what prevents look-ahead leakage. The backend POSTs a
+point-in-time close series + horizon + as-of indices to `POST /forecast`; the sidecar trains
+a fresh model per as-of index using only that index's past and returns the standard
+prediction object. If the sidecar is down, the backend skips the boosting models and the rest
+of the competition keeps working.
+
+- Configure with `ML_SIDECAR_PORT` / `ML_SIDECAR_URL` (see `.env.example`; default host port 8008).
+- Add a model: drop it in `ml-sidecar/models.py`, then register it in
+  `backend/src/services/prediction/registry.js` with `remote: true` + its `sidecarModel` key.
+
+- **No look-ahead:** each model is a pure function of `closes[0..i]`; the realized target
+  is `closes[i + horizon]`. A leakage test (`npm test`) enforces this.
+- The daily cron makes today's forecasts, scores matured ones, and refreshes the leaderboard
+  after prices update.
+- Code: `backend/src/services/prediction/` (models), `backend/src/services/competition/`
+  (harness + metrics), `backend/src/routes/competition.js` (API).
+
 ## Notes
 
 - Korean ETFs use `.KS` suffix on Yahoo Finance. Verify ticker codes match your broker.

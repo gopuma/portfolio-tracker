@@ -20,20 +20,23 @@ const HORIZON_DAYS = 5;
 const MODEL_VERSION = 'heuristic-v1';
 const WEIGHTS = { trend: 0.30, momentum: 0.25, sentiment: 0.25, value: 0.20 };
 
-function sma(arr, n) {
+// These technical-indicator helpers are exported and reused by the prediction
+// competition (services/prediction/features.js and the heuristic-v1 adapter), so
+// there is one source of truth for the math.
+export function sma(arr, n) {
   if (arr.length < n) return null;
   const slice = arr.slice(-n);
   return slice.reduce((a, b) => a + b, 0) / n;
 }
 
-function stdev(arr) {
+export function stdev(arr) {
   if (arr.length < 2) return 0;
   const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
   const v = arr.reduce((a, b) => a + (b - mean) ** 2, 0) / (arr.length - 1);
   return Math.sqrt(v);
 }
 
-function rsi(prices, period = 14) {
+export function rsi(prices, period = 14) {
   if (prices.length < period + 1) return null;
   let gains = 0, losses = 0;
   for (let i = prices.length - period; i < prices.length; i++) {
@@ -45,7 +48,7 @@ function rsi(prices, period = 14) {
   return 100 - 100 / (1 + rs);
 }
 
-function clamp(x, lo = -1, hi = 1) { return Math.max(lo, Math.min(hi, x)); }
+export function clamp(x, lo = -1, hi = 1) { return Math.max(lo, Math.min(hi, x)); }
 
 function trendSignal(closes) {
   const sma20 = sma(closes, 20);
@@ -90,6 +93,49 @@ function confidenceFrom(signals) {
   return clamp(1 - dispersion, 0, 1);
 }
 
+/**
+ * Pure heuristic-v1 forecast from a closes series + a 7-day sentiment average.
+ * No DB access — point-in-time safe, so it can be reused by the prediction
+ * competition's walk-forward harness at any horizon. `predictAndStore` below
+ * wraps this for the existing Overview behavior (horizon 5).
+ */
+export function computeHeuristic(closes, sentAvg = 0, horizon = HORIZON_DAYS) {
+  const basePrice = closes[closes.length - 1];
+  const signals = {
+    trend:     trendSignal(closes),
+    momentum:  momentumSignal(closes),
+    sentiment: clamp(sentAvg),
+    value:     valueSignal(closes),
+  };
+  const composite =
+      signals.trend     * WEIGHTS.trend
+    + signals.momentum  * WEIGHTS.momentum
+    + signals.sentiment * WEIGHTS.sentiment
+    + signals.value     * WEIGHTS.value;
+
+  const vol = dailyVolatility(closes, 30);
+  // Same shape as before: cap the per-horizon move at ~7.5% (0.025*3).
+  const volScale = Math.min(0.025 * 3, vol * Math.sqrt(horizon) * 3);
+  const predictedReturn = composite * volScale;
+  const predictedPrice  = +(basePrice * (1 + predictedReturn)).toFixed(4);
+  const confidence = +confidenceFrom(signals).toFixed(4);
+
+  return {
+    base_price: basePrice,
+    predicted_return: predictedReturn,
+    predicted_price: predictedPrice,
+    confidence,
+    composite,
+    signals,
+    factors: {
+      weights: WEIGHTS,
+      raw_signals: signals,
+      vol_30d_daily: +vol.toFixed(4),
+      vol_scale_used: +volScale.toFixed(4),
+    },
+  };
+}
+
 export async function predictAndStore(instrument) {
   // Pull 1 year of close prices
   const priceRows = await query(
@@ -102,7 +148,6 @@ export async function predictAndStore(instrument) {
     throw new Error(`Not enough price history for ${instrument.symbol} (have ${priceRows.length}, need 25+)`);
   }
   const closes = priceRows.map(r => Number(r.close_px));
-  const basePrice = closes[closes.length - 1];
 
   // Latest sentiment (rolling 7-day avg)
   const sentRows = await query(
@@ -114,32 +159,14 @@ export async function predictAndStore(instrument) {
     ? sentRows.reduce((a, r) => a + Number(r.score), 0) / sentRows.length
     : 0;
 
-  const signals = {
-    trend:     trendSignal(closes),
-    momentum:  momentumSignal(closes),
-    sentiment: clamp(sentAvg),
-    value:     valueSignal(closes),
-  };
-
-  const composite =
-      signals.trend     * WEIGHTS.trend
-    + signals.momentum  * WEIGHTS.momentum
-    + signals.sentiment * WEIGHTS.sentiment
-    + signals.value     * WEIGHTS.value;
-
-  const vol = dailyVolatility(closes, 30);
-  const volScale = Math.min(0.025 * 3, vol * Math.sqrt(HORIZON_DAYS) * 3); // cap at ~7.5%
-  const predictedReturn = composite * volScale;
-  const predictedPrice  = +(basePrice * (1 + predictedReturn)).toFixed(4);
-  const confidence = +confidenceFrom(signals).toFixed(4);
-
-  const factors = {
-    weights: WEIGHTS,
-    raw_signals: signals,
-    sentiment_records: sentRows.length,
-    vol_30d_daily: +vol.toFixed(4),
-    vol_scale_used: +volScale.toFixed(4),
-  };
+  const h = computeHeuristic(closes, sentAvg, HORIZON_DAYS);
+  const basePrice = h.base_price;
+  const signals = h.signals;
+  const composite = h.composite;
+  const predictedReturn = h.predicted_return;
+  const predictedPrice = h.predicted_price;
+  const confidence = h.confidence;
+  const factors = { ...h.factors, sentiment_records: sentRows.length };
 
   const today = new Date().toISOString().slice(0, 10);
   await pool.execute(

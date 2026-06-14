@@ -4,6 +4,7 @@ import { fetchAndStorePrices } from '../services/priceDispatcher.js';
 import { fetchAndStoreSentiment } from '../services/sentimentService.js';
 import { predictAndStore } from '../services/prediction.js';
 import { runAudit } from '../services/auditService.js';
+import { runDailyPredictions, runEvaluation } from '../services/competition/harness.js';
 
 const CRON = process.env.CRON_DAILY_REFRESH || '0 23 * * 1-5';
 
@@ -23,6 +24,17 @@ export function startDailyJob() {
       }
     }
     console.log('[cron] Daily refresh done.');
+
+    // Prediction competition: make today's forecasts (all models x watchlist x {5,30}),
+    // score any predictions that have now matured, and refresh the leaderboard. Runs
+    // after prices are updated so forecasts use the latest close.
+    try {
+      const made = await runDailyPredictions();
+      const evald = await runEvaluation();
+      console.log(`[cron][competition] predicted=${made.predictions} scored=${evald.scored} models=${evald.models_scored}`);
+    } catch (e) {
+      console.error('[cron][competition] failed:', e.message);
+    }
 
     // Verify the freshly-updated data — cross-checks stored prices against live Yahoo quotes.
     try {

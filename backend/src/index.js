@@ -11,6 +11,7 @@ import { goldGapRouter } from './routes/goldGap.js';
 import { analyticsRouter } from './routes/analytics.js';
 import { portfoliosRouter } from './routes/portfolios.js';
 import { auditRouter } from './routes/audit.js';
+import { competitionRouter } from './routes/competition.js';
 import { startDailyJob } from './jobs/dailyPriceJob.js';
 
 const app = express();
@@ -29,6 +30,7 @@ app.use('/api/gold-gap', goldGapRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/portfolios', portfoliosRouter);
 app.use('/api/audit', auditRouter);
+app.use('/api', competitionRouter); // /api/leaderboard, /api/models, /api/backtest, /api/competition/*
 
 // Error handler
 app.use((err, _req, res, _next) => {

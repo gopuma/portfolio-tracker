@@ -18,5 +18,20 @@ services:
       timeout: 5s
       retries: 5
 
+  # Stateless ML sidecar (Phase 2): gradient-boosting forecasters for the prediction
+  # competition. The Node backend POSTs point-in-time price series and gets back
+  # forecasts; this service never touches the database.
+  ml-sidecar:
+    build: ./ml-sidecar
+    container_name: portfolio-ml-sidecar
+    restart: unless-stopped
+    ports:
+      - "${ML_SIDECAR_PORT:-8008}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8000/health').status==200 else sys.exit(1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
 volumes:
   mysql_data:
