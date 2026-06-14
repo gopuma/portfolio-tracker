@@ -4,16 +4,18 @@ services:
     container_name: portfolio-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpass}
+      # Passwords are required from .env (no hardcoded fallback). DB name/user are
+      # non-secret identifiers and keep defaults.
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD is required — set it in .env}
       MYSQL_DATABASE: ${DB_NAME:-portfolio}
       MYSQL_USER: ${DB_USER:-portfolio}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-portfoliopass}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required — set it in .env}
     ports:
       - "${DB_PORT:-3306}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_ROOT_PASSWORD:-rootpass}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD is required}"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -2,7 +2,7 @@
  * Backfill historical prices + initial sentiment + prediction for every
  * seeded instrument. Run once after `npm run seed`.
  */
-import 'dotenv/config';
+import '../src/env.js';
 import { pool, getAllInstruments } from '../src/db.js';
 import { fetchAndStorePrices } from '../src/services/priceDispatcher.js';
 import { fetchAndStoreSentiment } from '../src/services/sentimentService.js';

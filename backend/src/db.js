@@ -1,11 +1,14 @@
 import mysql from 'mysql2/promise';
 
 export const pool = mysql.createPool({
+  // Host/port are network config (not secrets) and keep sensible local defaults.
+  // Credentials have NO fallback — they must come from .env (loaded via src/env.js),
+  // so a missing password fails loudly instead of silently using a known default.
   host: process.env.DB_HOST || '127.0.0.1',
   port: Number(process.env.DB_PORT || 3306),
-  user: process.env.DB_USER || 'portfolio',
-  password: process.env.DB_PASSWORD || 'portfoliopass',
-  database: process.env.DB_NAME || 'portfolio',
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,

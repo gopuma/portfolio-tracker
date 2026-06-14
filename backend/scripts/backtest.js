@@ -7,7 +7,7 @@
  *   npm run backtest            # default 180-day window
  *   npm run backtest -- 120     # custom window (trading days)
  */
-import 'dotenv/config';
+import '../src/env.js';
 import { pool } from '../src/db.js';
 import { backfill } from '../src/services/competition/harness.js';
 

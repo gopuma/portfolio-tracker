@@ -2,7 +2,7 @@
  * Run all SQL files in backend/src/migrations alphabetically.
  * Idempotent: each migration uses CREATE TABLE IF NOT EXISTS.
  */
-import 'dotenv/config';
+import '../src/env.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

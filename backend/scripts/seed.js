@@ -2,7 +2,7 @@
  * Seed the instruments table with tracked tickers from the user's portfolio.
  * Run after migration: `npm run seed`
  */
-import 'dotenv/config';
+import '../src/env.js';
 import { pool } from '../src/db.js';
 
 // NOTE: Korean ETF Yahoo tickers (KS suffix) — verify these match your broker.
