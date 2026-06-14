@@ -45,6 +45,13 @@ const PRESETS = [
   { label: '5Y', days: 1825 },
 ];
 const MAX_DAYS = 1825;
+// Period presets for the correlation matrix (independent of the stats table window).
+const CORR_PRESETS = [
+  { label: '1M', days: 30 },
+  { label: '3M', days: 90 },
+  { label: '6M', days: 180 },
+  { label: '1Y', days: 365 },
+];
 // Reference instruments shown on their own cards, not in the market tables.
 const PROTECTED_SYMBOLS = new Set(['GC=F', 'KRX-GOLD-SPOT']);
 const COLSPAN = 12; // checkbox + 11 data columns
@@ -75,7 +82,26 @@ export default function MarketAnalytics({ instruments, reload }) {
   const loadAnalytics = () => api.analytics(days, rf).then(setAn).catch(e => setErr(e.message));
   useEffect(() => { loadAnalytics(); /* eslint-disable-next-line */ }, [days, rf]);
 
-  const onChanged = () => { reload?.(); loadAnalytics(); };
+  // Correlation matrix has its own period (1D/1M/3M/6M/1Y), fetched independently
+  // of the stats table window above. rf doesn't affect correlations, so omit it.
+  const [corrDays, setCorrDays] = useState(365);
+  const [corr, setCorr] = useState(null);     // { symbols, matrix } | null
+  const [corrLoading, setCorrLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    setCorrLoading(true);
+    api.analytics(corrDays, 0)
+      .then(d => { if (!cancelled) setCorr(d.correlation); })
+      .catch(() => { if (!cancelled) setCorr(null); })
+      .finally(() => { if (!cancelled) setCorrLoading(false); });
+    return () => { cancelled = true; };
+  }, [corrDays]);
+
+  const onChanged = () => {
+    reload?.();
+    loadAnalytics();
+    api.analytics(corrDays, 0).then(d => setCorr(d.correlation)).catch(() => {});
+  };
 
   const applyDraft = () => {
     const n = Math.round(Number(draft));
@@ -235,32 +261,46 @@ export default function MarketAnalytics({ instruments, reload }) {
         </tbody>
       </table>
 
-      {an?.correlation?.symbols?.length > 1 && (
-        <>
-          <h3 style={{ marginTop: 20 }}>Correlation Matrix <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(daily returns)</span></h3>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ fontSize: 11 }}>
-              <thead>
-                <tr>
-                  <th style={{ position: 'sticky', left: 0, background: 'var(--panel)' }}></th>
-                  {an.correlation.symbols.map(s => (
-                    <th key={s} className="num" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', whiteSpace: 'nowrap', padding: '4px 2px' }}>{s}</th>
+      {/* Correlation matrix — its own period selector (1D/1M/3M/6M/1Y),
+          independent of the stats table window above. */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginTop: 20 }}>
+        <h3 style={{ margin: 0 }}>Correlation Matrix <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(daily returns)</span></h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          {CORR_PRESETS.map(p => (
+            <button key={p.label} className={`btn ${corrDays === p.days ? '' : 'ghost'}`} onClick={() => setCorrDays(p.days)}>{p.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {corrLoading ? (
+        <div className="loading" style={{ marginTop: 10 }}>Loading correlations…</div>
+      ) : corr?.symbols?.length > 1 ? (
+        <div style={{ overflowX: 'auto', marginTop: 10 }}>
+          <table style={{ fontSize: 11 }}>
+            <thead>
+              <tr>
+                <th style={{ position: 'sticky', left: 0, background: 'var(--panel)' }}></th>
+                {corr.symbols.map(s => (
+                  <th key={s} className="num" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', whiteSpace: 'nowrap', padding: '4px 2px' }}>{s}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {corr.matrix.map((row, i) => (
+                <tr key={corr.symbols[i]}>
+                  <th style={{ position: 'sticky', left: 0, background: 'var(--panel)', whiteSpace: 'nowrap' }}>{corr.symbols[i]}</th>
+                  {row.map((v, j) => (
+                    <td key={j} className="num" style={{ background: corrBg(v), padding: '4px 6px', textAlign: 'center' }}>{v == null ? '–' : v.toFixed(2)}</td>
                   ))}
                 </tr>
-              </thead>
-              <tbody>
-                {an.correlation.matrix.map((row, i) => (
-                  <tr key={an.correlation.symbols[i]}>
-                    <th style={{ position: 'sticky', left: 0, background: 'var(--panel)', whiteSpace: 'nowrap' }}>{an.correlation.symbols[i]}</th>
-                    {row.map((v, j) => (
-                      <td key={j} className="num" style={{ background: corrBg(v), padding: '4px 6px', textAlign: 'center' }}>{v == null ? '–' : v.toFixed(2)}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="loading" style={{ marginTop: 10 }}>
+          Not enough overlapping daily returns in this window to compute correlations — try a longer period.
+        </div>
       )}
 
       <p style={{ marginTop: 12, marginBottom: 0, fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6 }}>

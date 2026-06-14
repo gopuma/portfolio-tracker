@@ -170,9 +170,17 @@ portfoliosRouter.patch('/:id', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-/** Delete a portfolio (cascades to its holdings). */
+/** Delete a portfolio. Refused unless it's empty — all holdings must be removed first. */
 portfoliosRouter.delete('/:id', async (req, res, next) => {
   try {
+    const pf = await query(`SELECT id FROM portfolios WHERE id = ?`, [req.params.id]);
+    if (pf.length === 0) return res.status(404).json({ error: 'Portfolio not found' });
+
+    const [{ n }] = await query(`SELECT COUNT(*) AS n FROM portfolio_holdings WHERE portfolio_id = ?`, [req.params.id]);
+    if (Number(n) > 0) {
+      return res.status(409).json({ error: `Remove all ${n} holding${n > 1 ? 's' : ''} before deleting this portfolio` });
+    }
+
     const r = await query(`DELETE FROM portfolios WHERE id = ?`, [req.params.id]);
     if (r.affectedRows === 0) return res.status(404).json({ error: 'Portfolio not found' });
     res.json({ deleted: 1 });
