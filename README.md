@@ -34,7 +34,11 @@ portfolio-tracker/
 
 ## Quick Start
 
-### 1. Start MySQL
+> 📖 **New here? Read [SETUP.md](SETUP.md)** for a detailed, step-by-step guide
+> (prerequisites, the ML sidecar, first-time data load, Windows notes, and troubleshooting).
+> The steps below are the short version.
+
+### 1. Start MySQL + ML sidecar
 
 ```bash
 docker compose up -d
