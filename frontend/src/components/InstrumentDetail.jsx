@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { api } from '../api.js';
 
@@ -59,6 +59,13 @@ function rollingStd(values, period) {
 
 export default function InstrumentDetail() {
   const { symbol } = useParams();
+  const navigate = useNavigate();
+  // Go back to wherever the user came from (e.g. a portfolio's holdings), falling
+  // back to the home page if there's no in-app history (deep link / refresh).
+  const goBack = () => {
+    if (window.history.length > 1) navigate(-1);
+    else navigate('/');
+  };
   const [inst, setInst]       = useState(null);
   const [prices, setPrices]   = useState(null);
   const [sentiment, setSent]  = useState(null);
@@ -158,7 +165,7 @@ export default function InstrumentDetail() {
     <>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <Link to="/">← Back</Link>
+          <a href="#back" onClick={(e) => { e.preventDefault(); goBack(); }} style={{ cursor: 'pointer' }}>← Back</a>
           <h1 style={{ margin: '8px 0 0' }}>{inst.symbol} <span style={{ color: 'var(--text-dim)', fontSize: 16 }}>{inst.display_name}</span></h1>
           <div style={{ marginTop: 4, fontSize: 13, color: 'var(--text-dim)' }}>
             {inst.market} · {inst.asset_class} · {inst.currency}
