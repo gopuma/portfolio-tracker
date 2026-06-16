@@ -62,7 +62,7 @@ export default function PredictionsPage() {
     api.instruments()
       .then(rows => setSymbols((rows || [])
         .filter(r => r.watchlist && r.market !== 'FX' && r.market !== 'INDEX')
-        .map(r => r.symbol)))
+        .map(r => ({ symbol: r.symbol, name: r.display_name || r.symbol }))))
       .catch(() => {});
   }, []);
 
@@ -118,7 +118,7 @@ export default function PredictionsPage() {
               style={{ background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', padding: '6px 8px', fontSize: 13 }}
             >
               <option value="">All stocks</option>
-              {symbols.map(s => <option key={s} value={s}>{s}</option>)}
+              {symbols.map(s => <option key={s.symbol} value={s.symbol}>{s.name} ({s.symbol})</option>)}
             </select>
             {HORIZONS.map(h => (
               <button key={h.days} className={`btn ${horizon === h.days ? '' : 'ghost'}`} onClick={() => setHorizon(h.days)}>
@@ -197,7 +197,7 @@ function PerSymbol({ horizon, symbols, pageSymbol }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
 
-  useEffect(() => { if (symbols.length && !sel) setSel(symbols[0]); }, [symbols, sel]);
+  useEffect(() => { if (symbols.length && !sel) setSel(symbols[0].symbol); }, [symbols, sel]);
   useEffect(() => { if (pageSymbol) setSel(pageSymbol); }, [pageSymbol]);
 
   useEffect(() => {
@@ -239,7 +239,7 @@ function PerSymbol({ horizon, symbols, pageSymbol }) {
           onChange={e => setSel(e.target.value)}
           style={{ background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', padding: '6px 8px', fontSize: 13 }}
         >
-          {symbols.map(s => <option key={s} value={s}>{s}</option>)}
+          {symbols.map(s => <option key={s.symbol} value={s.symbol}>{s.name} ({s.symbol})</option>)}
         </select>
       </div>
 
