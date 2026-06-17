@@ -13,6 +13,11 @@ function fmtPct(n, d = 1) {
   return `${(Number(n) * 100).toFixed(d)}%`;
 }
 const cls = n => (n == null ? '' : n > 0 ? 'up' : n < 0 ? 'down' : '');
+// Truncate long company/fund names with an ellipsis (full name stays in the title tooltip).
+function truncate(s, max = 18) {
+  if (!s || s.length <= max) return s;
+  return s.slice(0, max - 1).trimEnd() + '…';
+}
 
 // "Data as of" caption from a YYYY-MM-DD string. Parsed as local time
 // (not UTC) so the date doesn't slip a day in negative-offset zones.
@@ -113,6 +118,8 @@ export default function MarketAnalytics({ instruments, reload }) {
   const us = items.filter(i => i.market === 'US');
   const kr = items.filter(i => i.market === 'KR');
   const statsBySym = Object.fromEntries((an?.assets || []).map(a => [a.symbol, a]));
+  // Symbol → company/fund name, so the correlation matrix can show what each ticker is.
+  const nameBySym = Object.fromEntries((instruments || []).map(i => [i.symbol, i.display_name]));
 
   const exitRemove = () => { setRemoveMarket(null); setSelected(new Set()); };
   const toggle = (sym) => setSelected(prev => { const n = new Set(prev); n.has(sym) ? n.delete(sym) : n.add(sym); return n; });
@@ -281,14 +288,28 @@ export default function MarketAnalytics({ instruments, reload }) {
               <tr>
                 <th style={{ position: 'sticky', left: 0, background: 'var(--panel)' }}></th>
                 {corr.symbols.map(s => (
-                  <th key={s} className="num" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', whiteSpace: 'nowrap', padding: '4px 2px' }}>{s}</th>
+                  <th key={s} className="num" title={nameBySym[s] || s} style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', whiteSpace: 'nowrap', padding: '4px 2px', verticalAlign: 'bottom' }}>
+                    <span style={{ fontWeight: 600 }}>{s}</span>
+                    {nameBySym[s] && (
+                      <span style={{ fontWeight: 400, color: 'var(--text-dim)' }}>
+                        {'  '}· {truncate(nameBySym[s], 10)}
+                      </span>
+                    )}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {corr.matrix.map((row, i) => (
                 <tr key={corr.symbols[i]}>
-                  <th style={{ position: 'sticky', left: 0, background: 'var(--panel)', whiteSpace: 'nowrap' }}>{corr.symbols[i]}</th>
+                  <th style={{ position: 'sticky', left: 0, background: 'var(--panel)', whiteSpace: 'nowrap', textAlign: 'left' }} title={nameBySym[corr.symbols[i]] || corr.symbols[i]}>
+                    {corr.symbols[i]}
+                    {nameBySym[corr.symbols[i]] && (
+                      <div style={{ fontWeight: 400, fontSize: 10, color: 'var(--text-dim)', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {nameBySym[corr.symbols[i]]}
+                      </div>
+                    )}
+                  </th>
                   {row.map((v, j) => (
                     <td key={j} className="num" style={{ background: corrBg(v), padding: '4px 6px', textAlign: 'center' }}>{v == null ? '–' : v.toFixed(2)}</td>
                   ))}
