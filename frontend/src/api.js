@@ -72,6 +72,7 @@ export const api = {
   lookup:        (symbol)                => get(`/instruments/lookup?symbol=${encodeURIComponent(symbol)}`),
   portfolios:    ()                      => get(`/portfolios`),
   portfolioById: (id)                    => get(`/portfolios/${id}`),
+  portfolioValueHistory: (id)            => get(`/portfolios/${id}/value-history`),
   createPortfolio: (body)                => postJson(`/portfolios`, body),
   renamePortfolio: (id, name)            => patchJson(`/portfolios/${id}`, { name }),
   deletePortfolio: (id)                  => del(`/portfolios/${id}`),
