@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import MptPanel from './MptPanel.jsx';
+import PortfolioValueChart from './PortfolioValueChart.jsx';
 
 function fmtNum(n, d = 2) {
   if (n == null || isNaN(n)) return '–';
@@ -206,6 +207,8 @@ export default function PortfolioDetail() {
           <Metric label="Total Gain (KRW)" value={fmtMoney(toKrw(t.gain), 'KRW')} color={cls(t.gain)} />
         </div>
       )}
+
+      {hasHoldings && <PortfolioValueChart portfolioId={id} base={ccy} />}
 
       <AddHoldingForm portfolioId={id} full={full} onAdded={load} />
 

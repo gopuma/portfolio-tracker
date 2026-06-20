@@ -7,6 +7,10 @@ export const portfoliosRouter = express.Router();
 
 const MAX_HOLDINGS = 30;
 
+// Monthly value chart starts here. Earlier months exist in the price history but
+// predate reliable portfolio data, so the bars begin at this month by default.
+const VALUE_HISTORY_START = '2026-02';
+
 // Cache the live FX rate briefly so back-to-back portfolio reads don't each hit Yahoo.
 const FX_TTL_MS = 60_000;
 let fxCache = { rate: null, at: 0 };
@@ -134,6 +138,56 @@ export function computePortfolio(rows, base, krwPerUsd) {
   };
 }
 
+// Reconstruct the portfolio's month-by-month total asset value by valuing the
+// CURRENT holdings at each month's average close. There is no transaction history,
+// so past contributions / share changes are NOT reflected — this is "what today's
+// basket would have been worth," not the historical account balance.
+//
+// Because share counts are constant, the average over a month's trading days of the
+// summed holding values equals sum(shares × month-average close), converted to the
+// base currency at the month's average USD/KRW.
+//
+//   holdings:  [{ instrument_id, shares, currency }]
+//   priceRows: [{ instrument_id, ym: 'YYYY-MM', avg_close }]
+//   fxRows:    [{ ym: 'YYYY-MM', avg_fx }]   // KRW per USD, monthly average
+//
+// Only months in which EVERY holding has a price are returned, so each bar is a
+// like-for-like total of the full basket. An optional `since` ('YYYY-MM') floors
+// the series at that month. Returns points sorted ascending by month.
+export function monthlyPortfolioValues(holdings, priceRows, fxRows, base, since = null) {
+  const priceByInst = new Map(); // instrument_id -> (ym -> avg_close)
+  for (const r of priceRows) {
+    if (!priceByInst.has(r.instrument_id)) priceByInst.set(r.instrument_id, new Map());
+    priceByInst.get(r.instrument_id).set(r.ym, Number(r.avg_close));
+  }
+  const fxByMonth = new Map(fxRows.map(r => [r.ym, Number(r.avg_fx)]));
+
+  // Months common to every holding's instrument (intersection).
+  let months = null;
+  for (const inst of new Set(holdings.map(h => h.instrument_id))) {
+    const ms = priceByInst.get(inst);
+    if (!ms) return []; // a holding has no price history -> no full-basket months
+    const set = new Set(ms.keys());
+    months = months == null ? set : new Set([...months].filter(m => set.has(m)));
+  }
+  if (!months || months.size === 0) return [];
+
+  const points = [];
+  for (const ym of [...months].sort()) {
+    if (since && ym < since) continue; // 'YYYY-MM' compares lexically
+    const fx = fxByMonth.get(ym) ?? null;
+    let total = 0, ok = true;
+    for (const h of holdings) {
+      const px = priceByInst.get(h.instrument_id)?.get(ym);
+      // Need an FX rate whenever a holding's currency differs from the base.
+      if (px == null || (h.currency !== base && !fx)) { ok = false; break; }
+      total += convert(Number(h.shares) * px, h.currency, base, fx);
+    }
+    if (ok) points.push({ month: ym, value: total });
+  }
+  return points;
+}
+
 /** List all portfolios with rolled-up returns. */
 portfoliosRouter.get('/', async (_req, res, next) => {
   try {
@@ -170,6 +224,49 @@ portfoliosRouter.get('/:id', async (req, res, next) => {
     const holdingRows = await loadHoldings(p.id);
     const { holdings, totals } = computePortfolio(holdingRows, p.base_currency, krwPerUsd);
     res.json({ ...p, max_holdings: MAX_HOLDINGS, krw_per_usd: krwPerUsd, holdings, totals });
+  } catch (e) { next(e); }
+});
+
+/**
+ * Month-by-month average total asset value, for the monthly value bar chart.
+ * Values the portfolio's CURRENT holdings at each month's average close (see
+ * monthlyPortfolioValues). Returns { base_currency, points: [{ month, value }] }.
+ */
+portfoliosRouter.get('/:id/value-history', async (req, res, next) => {
+  try {
+    const pf = await query(`SELECT id, base_currency FROM portfolios WHERE id = ?`, [req.params.id]);
+    if (pf.length === 0) return res.status(404).json({ error: 'Portfolio not found' });
+    const base = pf[0].base_currency;
+
+    const holdings = await query(
+      `SELECT h.shares, h.currency, i.id AS instrument_id
+         FROM portfolio_holdings h
+         JOIN instruments i ON i.symbol = h.symbol COLLATE utf8mb4_unicode_ci
+        WHERE h.portfolio_id = ?`,
+      [req.params.id]
+    );
+    if (holdings.length === 0) return res.json({ base_currency: base, points: [] });
+
+    const instIds = [...new Set(holdings.map(h => h.instrument_id))];
+    const placeholders = instIds.map(() => '?').join(',');
+    const priceRows = await query(
+      `SELECT instrument_id, DATE_FORMAT(trade_date, '%Y-%m') AS ym, AVG(close_px) AS avg_close
+         FROM prices
+        WHERE instrument_id IN (${placeholders})
+        GROUP BY instrument_id, ym`,
+      instIds
+    );
+
+    // Monthly-average USD/KRW for converting cross-currency holdings to the base.
+    const fxRows = await query(
+      `SELECT DATE_FORMAT(p.trade_date, '%Y-%m') AS ym, AVG(p.close_px) AS avg_fx
+         FROM prices p JOIN instruments i ON i.id = p.instrument_id
+        WHERE i.symbol = 'KRW=X'
+        GROUP BY ym`
+    );
+
+    const since = req.query.since || VALUE_HISTORY_START;
+    res.json({ base_currency: base, points: monthlyPortfolioValues(holdings, priceRows, fxRows, base, since) });
   } catch (e) { next(e); }
 });
 
