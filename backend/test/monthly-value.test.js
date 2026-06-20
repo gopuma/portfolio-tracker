@@ -53,6 +53,20 @@ test('converts KRW holdings to USD base at the month-average FX', () => {
   assert.deepEqual(pts, [{ month: '2024-01', value: 10 }]);
 });
 
+test('since floors the series at the given month', () => {
+  const holdings = [{ instrument_id: 1, shares: 1, currency: 'USD' }];
+  const priceRows = [
+    { instrument_id: 1, ym: '2026-01', avg_close: 100 },
+    { instrument_id: 1, ym: '2026-02', avg_close: 110 },
+    { instrument_id: 1, ym: '2026-03', avg_close: 120 },
+  ];
+  const pts = monthlyPortfolioValues(holdings, priceRows, [], 'USD', '2026-02');
+  assert.deepEqual(pts, [
+    { month: '2026-02', value: 110 },
+    { month: '2026-03', value: 120 },
+  ]);
+});
+
 test('empty holdings and missing price history yield no points', () => {
   assert.deepEqual(monthlyPortfolioValues([], [], [], 'USD'), []);
   const holdings = [{ instrument_id: 9, shares: 1, currency: 'USD' }];

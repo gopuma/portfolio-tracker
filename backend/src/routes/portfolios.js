@@ -7,6 +7,10 @@ export const portfoliosRouter = express.Router();
 
 const MAX_HOLDINGS = 30;
 
+// Monthly value chart starts here. Earlier months exist in the price history but
+// predate reliable portfolio data, so the bars begin at this month by default.
+const VALUE_HISTORY_START = '2026-02';
+
 // Cache the live FX rate briefly so back-to-back portfolio reads don't each hit Yahoo.
 const FX_TTL_MS = 60_000;
 let fxCache = { rate: null, at: 0 };
@@ -134,9 +138,9 @@ function computePortfolio(rows, base, krwPerUsd) {
 //   fxRows:    [{ ym: 'YYYY-MM', avg_fx }]   // KRW per USD, monthly average
 //
 // Only months in which EVERY holding has a price are returned, so each bar is a
-// like-for-like total of the full basket (the series naturally begins when the
-// shortest-history holding's prices begin). Returns points sorted ascending by month.
-export function monthlyPortfolioValues(holdings, priceRows, fxRows, base) {
+// like-for-like total of the full basket. An optional `since` ('YYYY-MM') floors
+// the series at that month. Returns points sorted ascending by month.
+export function monthlyPortfolioValues(holdings, priceRows, fxRows, base, since = null) {
   const priceByInst = new Map(); // instrument_id -> (ym -> avg_close)
   for (const r of priceRows) {
     if (!priceByInst.has(r.instrument_id)) priceByInst.set(r.instrument_id, new Map());
@@ -156,6 +160,7 @@ export function monthlyPortfolioValues(holdings, priceRows, fxRows, base) {
 
   const points = [];
   for (const ym of [...months].sort()) {
+    if (since && ym < since) continue; // 'YYYY-MM' compares lexically
     const fx = fxByMonth.get(ym) ?? null;
     let total = 0, ok = true;
     for (const h of holdings) {
@@ -246,7 +251,8 @@ portfoliosRouter.get('/:id/value-history', async (req, res, next) => {
         GROUP BY ym`
     );
 
-    res.json({ base_currency: base, points: monthlyPortfolioValues(holdings, priceRows, fxRows, base) });
+    const since = req.query.since || VALUE_HISTORY_START;
+    res.json({ base_currency: base, points: monthlyPortfolioValues(holdings, priceRows, fxRows, base, since) });
   } catch (e) { next(e); }
 });
 
