@@ -63,8 +63,11 @@ async function loadHoldings(portfolioId) {
 
 // Enrich each holding with value/returns and roll up portfolio-level returns.
 // Per-holding window returns are native-currency price returns (FX-independent);
-// the portfolio figure is those returns value-weighted by current base-currency value.
-function computePortfolio(rows, base, krwPerUsd) {
+// the portfolio figure is the realized return of holding every position for the
+// window — i.e. each holding's return weighted by its value at the START of the
+// window, computed as (sum of end values) / (sum of start values) - 1. Weighting
+// by *current* value would overweight winners and bias the number upward.
+export function computePortfolio(rows, base, krwPerUsd) {
   const holdings = rows.map(r => {
     const latest = r.latest_close != null ? Number(r.latest_close) : null;
     const cost = Number(r.cost_price);
@@ -97,12 +100,23 @@ function computePortfolio(rows, base, krwPerUsd) {
   const totalCost = holdings.reduce((a, h) => a + (h.cost_basis_base || 0), 0);
   for (const h of holdings) h.weight = totalValue > 0 ? (h.market_value_base || 0) / totalValue : null;
 
-  const weighted = (key) => {
-    let num = 0, den = 0;
-    for (const h of holdings) {
-      if (h[key] != null && h.market_value_base) { num += h.market_value_base * h[key]; den += h.market_value_base; }
+  // Realized buy-and-hold return over a price window: sum each holding's
+  // base-currency value at the window start (shares × start close) and at the end
+  // (shares × latest close), then take end/start − 1. This is equivalent to
+  // weighting each holding's return by its START-of-window value, which is the
+  // correct weighting (current-value weighting overweights winners). FX-neutral:
+  // both endpoints convert at today's rate, matching the per-holding returns.
+  const windowReturn = (closeKey) => {
+    let startSum = 0, endSum = 0;
+    for (const r of rows) {
+      const latest = r.latest_close != null ? Number(r.latest_close) : null;
+      const then = r[closeKey] != null ? Number(r[closeKey]) : null;
+      if (latest == null || then == null || !(then > 0)) continue;
+      const shares = Number(r.shares);
+      startSum += convert(shares * then, r.currency, base, krwPerUsd);
+      endSum += convert(shares * latest, r.currency, base, krwPerUsd);
     }
-    return den > 0 ? num / den : null;
+    return startSum > 0 ? endSum / startSum - 1 : null;
   };
 
   return {
@@ -113,9 +127,9 @@ function computePortfolio(rows, base, krwPerUsd) {
       cost_basis: totalCost,
       gain: totalValue - totalCost,
       return_inception: totalCost > 0 ? totalValue / totalCost - 1 : null,
-      return_1y: weighted('return_1y'),
-      return_3y: weighted('return_3y'),
-      return_5y: weighted('return_5y'),
+      return_1y: windowReturn('close_1y'),
+      return_3y: windowReturn('close_3y'),
+      return_5y: windowReturn('close_5y'),
     },
   };
 }
