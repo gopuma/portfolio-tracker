@@ -139,23 +139,41 @@ export function computePortfolio(rows, base, krwPerUsd) {
   };
 }
 
-// Reconstruct the portfolio's month-by-month total asset value by valuing the
-// CURRENT holdings at each month's average close. There is no transaction history,
-// so past contributions / share changes are NOT reflected — this is "what today's
-// basket would have been worth," not the historical account balance.
+// Reconstruct the portfolio's month-by-month total asset value, broken down by
+// stock, by valuing the CURRENT holdings at each month's average close. There is no
+// transaction history, so past contributions / share changes are NOT reflected —
+// this is "what today's basket would have been worth," not the historical balance.
 //
 // Because share counts are constant, the average over a month's trading days of the
 // summed holding values equals sum(shares × month-average close), converted to the
-// base currency at the month's average USD/KRW.
+// base currency at the month's average USD/KRW. Lots of the same symbol (e.g. across
+// accounts) are combined into one stock.
 //
-//   holdings:  [{ instrument_id, shares, currency }]
+//   holdings:  [{ instrument_id, symbol, name, shares, currency }]
 //   priceRows: [{ instrument_id, ym: 'YYYY-MM', avg_close }]
 //   fxRows:    [{ ym: 'YYYY-MM', avg_fx }]   // KRW per USD, monthly average
 //
-// Only months in which EVERY holding has a price are returned, so each bar is a
-// like-for-like total of the full basket. An optional `since` ('YYYY-MM') floors
-// the series at that month. Returns points sorted ascending by month.
+// Only months in which EVERY stock has a price are returned, so each bar is a
+// like-for-like full-basket total. An optional `since` ('YYYY-MM') floors the
+// series. Returns { symbols, points }:
+//   symbols: [{ key, symbol, name }]   stack series, ordered by latest value desc
+//   points:  [{ month, total, [key]: value, ... }]  sorted ascending by month
+// Per-stock values use the assigned `key` (s0, s1, …) so symbols containing dots
+// (e.g. '489250.KS') are safe as recharts data keys.
 export function monthlyPortfolioValues(holdings, priceRows, fxRows, base, since = null) {
+  // Combine lots of the same symbol into one stock (sum shares).
+  const bySymbol = new Map(); // symbol -> { symbol, name, instrument_id, currency, shares }
+  for (const h of holdings) {
+    const cur = bySymbol.get(h.symbol);
+    if (cur) cur.shares += Number(h.shares);
+    else bySymbol.set(h.symbol, {
+      symbol: h.symbol, name: h.name, instrument_id: h.instrument_id,
+      currency: h.currency, shares: Number(h.shares),
+    });
+  }
+  const stocks = [...bySymbol.values()];
+  if (stocks.length === 0) return { symbols: [], points: [] };
+
   const priceByInst = new Map(); // instrument_id -> (ym -> avg_close)
   for (const r of priceRows) {
     if (!priceByInst.has(r.instrument_id)) priceByInst.set(r.instrument_id, new Map());
@@ -163,30 +181,48 @@ export function monthlyPortfolioValues(holdings, priceRows, fxRows, base, since 
   }
   const fxByMonth = new Map(fxRows.map(r => [r.ym, Number(r.avg_fx)]));
 
-  // Months common to every holding's instrument (intersection).
+  // Months common to every stock's instrument (intersection).
   let months = null;
-  for (const inst of new Set(holdings.map(h => h.instrument_id))) {
-    const ms = priceByInst.get(inst);
-    if (!ms) return []; // a holding has no price history -> no full-basket months
+  for (const s of stocks) {
+    const ms = priceByInst.get(s.instrument_id);
+    if (!ms) return { symbols: [], points: [] }; // a stock has no price history
     const set = new Set(ms.keys());
     months = months == null ? set : new Set([...months].filter(m => set.has(m)));
   }
-  if (!months || months.size === 0) return [];
+  if (!months || months.size === 0) return { symbols: [], points: [] };
 
-  const points = [];
+  // Per-month, per-stock value (full basket only).
+  const rows = [];
   for (const ym of [...months].sort()) {
     if (since && ym < since) continue; // 'YYYY-MM' compares lexically
     const fx = fxByMonth.get(ym) ?? null;
+    const breakdown = new Map();
     let total = 0, ok = true;
-    for (const h of holdings) {
-      const px = priceByInst.get(h.instrument_id)?.get(ym);
-      // Need an FX rate whenever a holding's currency differs from the base.
-      if (px == null || (h.currency !== base && !fx)) { ok = false; break; }
-      total += convert(Number(h.shares) * px, h.currency, base, fx);
+    for (const s of stocks) {
+      const px = priceByInst.get(s.instrument_id)?.get(ym);
+      // Need an FX rate whenever a stock's currency differs from the base.
+      if (px == null || (s.currency !== base && !fx)) { ok = false; break; }
+      const v = convert(s.shares * px, s.currency, base, fx);
+      breakdown.set(s.symbol, v);
+      total += v;
     }
-    if (ok) points.push({ month: ym, value: total });
+    if (ok) rows.push({ month: ym, total, breakdown });
   }
-  return points;
+  if (rows.length === 0) return { symbols: [], points: [] };
+
+  // Order the stack by the latest month's value (largest at the bottom).
+  const last = rows.at(-1).breakdown;
+  const ordered = [...stocks].sort((a, b) => (last.get(b.symbol) ?? 0) - (last.get(a.symbol) ?? 0));
+  const symbols = ordered.map((s, i) => ({ key: `s${i}`, symbol: s.symbol, name: s.name }));
+  const keyBySymbol = new Map(symbols.map(s => [s.symbol, s.key]));
+
+  const points = rows.map(r => {
+    const point = { month: r.month, total: r.total };
+    for (const [sym, val] of r.breakdown) point[keyBySymbol.get(sym)] = val;
+    return point;
+  });
+
+  return { symbols, points };
 }
 
 /** List all portfolios with rolled-up returns. */
@@ -229,9 +265,10 @@ portfoliosRouter.get('/:id', async (req, res, next) => {
 });
 
 /**
- * Month-by-month average total asset value, for the monthly value bar chart.
- * Values the portfolio's CURRENT holdings at each month's average close (see
- * monthlyPortfolioValues). Returns { base_currency, points: [{ month, value }] }.
+ * Month-by-month average total asset value broken down by stock, for the stacked
+ * value bar chart. Values the portfolio's CURRENT holdings at each month's average
+ * close (see monthlyPortfolioValues). Returns
+ * { base_currency, symbols: [{ key, symbol, name }], points: [{ month, total, [key]: value }] }.
  */
 portfoliosRouter.get('/:id/value-history', async (req, res, next) => {
   try {
@@ -240,13 +277,13 @@ portfoliosRouter.get('/:id/value-history', async (req, res, next) => {
     const base = pf[0].base_currency;
 
     const holdings = await query(
-      `SELECT h.shares, h.currency, i.id AS instrument_id
+      `SELECT h.shares, h.currency, i.id AS instrument_id, i.symbol, i.display_name AS name
          FROM portfolio_holdings h
          JOIN instruments i ON i.symbol = h.symbol COLLATE utf8mb4_unicode_ci
         WHERE h.portfolio_id = ?`,
       [req.params.id]
     );
-    if (holdings.length === 0) return res.json({ base_currency: base, points: [] });
+    if (holdings.length === 0) return res.json({ base_currency: base, symbols: [], points: [] });
 
     const instIds = [...new Set(holdings.map(h => h.instrument_id))];
     const placeholders = instIds.map(() => '?').join(',');
@@ -267,7 +304,8 @@ portfoliosRouter.get('/:id/value-history', async (req, res, next) => {
     );
 
     const since = req.query.since || VALUE_HISTORY_START;
-    res.json({ base_currency: base, points: monthlyPortfolioValues(holdings, priceRows, fxRows, base, since) });
+    const { symbols, points } = monthlyPortfolioValues(holdings, priceRows, fxRows, base, since);
+    res.json({ base_currency: base, symbols, points });
   } catch (e) { next(e); }
 });
 
