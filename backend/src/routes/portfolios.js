@@ -7,9 +7,10 @@ export const portfoliosRouter = express.Router();
 
 const MAX_HOLDINGS = 30;
 
-// Monthly value chart starts here. Earlier months exist in the price history but
-// predate reliable portfolio data, so the bars begin at this month by default.
-const VALUE_HISTORY_START = '2026-02';
+// Monthly value chart starts here by default (overridable via ?since=YYYY-MM).
+// Months still only appear when every current holding has price data that month,
+// so the series can begin later than this if a holding's history is shorter.
+const VALUE_HISTORY_START = '2025-01';
 
 // Cache the live FX rate briefly so back-to-back portfolio reads don't each hit Yahoo.
 const FX_TTL_MS = 60_000;
