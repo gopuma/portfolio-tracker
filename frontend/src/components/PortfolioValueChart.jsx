@@ -108,7 +108,7 @@ export default function PortfolioValueChart({ portfolioId, base }) {
       <h2 style={{ margin: '0 0 4px' }}>Monthly Total Asset Value</h2>
       <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6 }}>
         Each bar is the average total value of your <strong style={{ color: 'var(--text)' }}>current</strong> holdings across
-        that month, valued at historical prices (in {ccy}), from February 2026 onward. The figure on top of each bar is the
+        that month, valued at historical prices (in {ccy}), from January 2025 onward. The figure on top of each bar is the
         month's average value, with its month-over-month change beneath. Because there's no transaction record, it reflects
         today's basket applied to the past — not your actual past balance.
       </p>
