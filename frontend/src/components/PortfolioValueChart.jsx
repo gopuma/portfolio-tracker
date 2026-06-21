@@ -33,6 +33,25 @@ const PALETTE = [
 ];
 const colorAt = i => PALETTE[i % PALETTE.length];
 
+// Trailing-window presets (in months). `months: null` = show all available months.
+const PRESETS = [
+  { label: '6M', months: 6 },
+  { label: '1Y', months: 12 },
+  { label: '3Y', months: 36 },
+  { label: 'All', months: null },
+];
+
+const inputStyle = {
+  width: 72,
+  background: 'var(--panel-2)',
+  border: '1px solid var(--border)',
+  borderRadius: 6,
+  color: 'var(--text)',
+  padding: '6px 8px',
+  fontSize: 13,
+  fontVariantNumeric: 'tabular-nums',
+};
+
 // Tooltip: per-stock breakdown for the hovered month, plus total and MoM change.
 // `hoverKey` bolds the actively-hovered stock's row.
 function ChartTooltip({ active, payload, ccy, symbols, hoverKey }) {
@@ -99,6 +118,15 @@ export default function PortfolioValueChart({ portfolioId, base }) {
   const [loading, setLoading] = useState(true);
   // Stock currently hovered (in the chart or legend); highlights it everywhere.
   const [hoverKey, setHoverKey] = useState(null);
+  // Trailing window in months to display (null = all available).
+  const [rangeMonths, setRangeMonths] = useState(null);
+  const [draft, setDraft] = useState('');
+
+  const applyDraft = () => {
+    const n = Math.round(Number(draft));
+    if (!n || n < 1) return;
+    setRangeMonths(n);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -125,9 +153,38 @@ export default function PortfolioValueChart({ portfolioId, base }) {
     });
   }, [resp]);
 
+  // Trailing-window slice for display. MoM on each point is already relative to its
+  // true previous month (computed on the full series), so slicing keeps it correct.
+  const visible = useMemo(
+    () => (rangeMonths == null ? data : data.slice(-rangeMonths)),
+    [data, rangeMonths]
+  );
+
   return (
     <div className="panel">
-      <h2 style={{ margin: '0 0 4px' }}>Monthly Total Asset Value</h2>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <h2 style={{ margin: '0 0 4px' }}>Monthly Total Asset Value</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {PRESETS.map(p => (
+            <button
+              key={p.label}
+              className={`btn ${rangeMonths === p.months ? '' : 'ghost'}`}
+              onClick={() => { setRangeMonths(p.months); setDraft(p.months == null ? '' : String(p.months)); }}
+            >
+              {p.label}
+            </button>
+          ))}
+          <input
+            type="number" min={1} value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') applyDraft(); }}
+            placeholder="#"
+            style={inputStyle}
+          />
+          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>months</span>
+          <button className="btn" onClick={applyDraft}>Apply</button>
+        </div>
+      </div>
       <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6 }}>
         Each bar is the average total value of your <strong style={{ color: 'var(--text)' }}>current</strong> holdings across
         that month, valued at historical prices (in {ccy}) and stacked by stock, from January 2025 onward. The figure on top of
@@ -144,7 +201,7 @@ export default function PortfolioValueChart({ portfolioId, base }) {
         <>
           <div style={{ width: '100%', height: 340 }}>
             <ResponsiveContainer>
-              <BarChart data={data} margin={{ top: 28, right: 12, left: 0, bottom: 0 }}>
+              <BarChart data={visible} margin={{ top: 28, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
                 <XAxis dataKey="month" tickFormatter={fmtMonth} stroke="#9aa0a6" fontSize={11} minTickGap={20} />
                 <YAxis
@@ -164,7 +221,7 @@ export default function PortfolioValueChart({ portfolioId, base }) {
                       onMouseEnter={() => setHoverKey(s.key)}
                       onMouseLeave={() => setHoverKey(null)}
                     >
-                      {isTop && <LabelList content={makeTotalLabel(data)} />}
+                      {isTop && <LabelList content={makeTotalLabel(visible)} />}
                     </Bar>
                   );
                 })}
