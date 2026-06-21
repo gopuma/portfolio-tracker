@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, LabelList } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LabelList } from 'recharts';
 import { api } from '../api.js';
 
 function fmtMoney(n, ccy, d = 0) {
@@ -34,13 +34,14 @@ const PALETTE = [
 const colorAt = i => PALETTE[i % PALETTE.length];
 
 // Tooltip: per-stock breakdown for the hovered month, plus total and MoM change.
-function ChartTooltip({ active, payload, ccy, symbols }) {
+// `hoverKey` bolds the actively-hovered stock's row.
+function ChartTooltip({ active, payload, ccy, symbols, hoverKey }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
-  const labelBy = new Map(symbols.map(s => [s.key, s.symbol]));
+  const meta = new Map(symbols.map(s => [s.key, s.symbol]));
   const segs = payload
     .filter(p => p.value != null && p.value > 0)
-    .map(p => ({ symbol: labelBy.get(p.dataKey) || p.dataKey, value: p.value, color: p.color }))
+    .map(p => ({ key: p.dataKey, symbol: meta.get(p.dataKey) || p.dataKey, value: p.value, color: p.color }))
     .sort((a, b) => b.value - a.value);
   const momColor = row.mom == null ? DIM : row.mom > 0 ? GREEN : row.mom < 0 ? RED : DIM;
   return (
@@ -53,13 +54,16 @@ function ChartTooltip({ active, payload, ccy, symbols }) {
           {row.momPct != null ? ` (${fmtPct(Math.abs(row.momPct))})` : ''} MoM
         </div>
       )}
-      {segs.map(s => (
-        <div key={s.symbol} style={{ display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1.5 }}>
-          <span style={{ width: 9, height: 9, borderRadius: 2, background: s.color, flexShrink: 0 }} />
-          <span style={{ color: '#cbd2da', flex: 1 }}>{s.symbol}</span>
-          <span style={{ color: '#e6e6e6' }}>{fmtMoney(s.value, ccy)}</span>
-        </div>
-      ))}
+      {segs.map(s => {
+        const on = hoverKey === s.key;
+        return (
+          <div key={s.symbol} style={{ display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1.5, opacity: hoverKey && !on ? 0.5 : 1 }}>
+            <span style={{ width: 9, height: 9, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+            <span style={{ color: '#cbd2da', flex: 1, fontWeight: on ? 700 : 400 }}>{s.symbol}</span>
+            <span style={{ color: '#e6e6e6', fontWeight: on ? 700 : 400 }}>{fmtMoney(s.value, ccy)}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -93,11 +97,14 @@ export default function PortfolioValueChart({ portfolioId, base }) {
   const [resp, setResp] = useState(null);
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Stock currently hovered (in the chart or legend); highlights it everywhere.
+  const [hoverKey, setHoverKey] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setErr(null);
+    setHoverKey(null);
     api.portfolioValueHistory(portfolioId)
       .then(d => { if (!cancelled) setResp(d); })
       .catch(e => { if (!cancelled) setErr(e.message); })
@@ -134,36 +141,67 @@ export default function PortfolioValueChart({ portfolioId, base }) {
       ) : data.length === 0 ? (
         <div className="loading">Not enough price history yet to chart monthly value.</div>
       ) : (
-        <div style={{ width: '100%', height: 380 }}>
-          <ResponsiveContainer>
-            <BarChart data={data} margin={{ top: 28, right: 12, left: 0, bottom: 0 }}>
-              <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
-              <XAxis dataKey="month" tickFormatter={fmtMonth} stroke="#9aa0a6" fontSize={11} minTickGap={20} />
-              <YAxis
-                stroke="#9aa0a6" fontSize={11} width={52} tickFormatter={fmtCompact}
-                // Headroom so the on-bar total labels aren't clipped.
-                domain={[0, max => (max > 0 ? max * 1.18 : 1)]}
-              />
-              <Tooltip cursor={false} content={<ChartTooltip ccy={ccy} symbols={symbols} />} />
-              <Legend
-                formatter={(_v, entry) => symbols.find(s => s.key === entry.dataKey)?.symbol || entry.dataKey}
-                wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
-              />
-              {symbols.map((s, i) => {
-                const isTop = i === symbols.length - 1;
-                return (
-                  <Bar
-                    key={s.key} dataKey={s.key} name={s.symbol} stackId="v"
-                    fill={colorAt(i)} maxBarSize={72}
-                    radius={isTop ? [2, 2, 0, 0] : [0, 0, 0, 0]}
-                  >
-                    {isTop && <LabelList content={makeTotalLabel(data)} />}
-                  </Bar>
-                );
-              })}
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <>
+          <div style={{ width: '100%', height: 340 }}>
+            <ResponsiveContainer>
+              <BarChart data={data} margin={{ top: 28, right: 12, left: 0, bottom: 0 }}>
+                <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
+                <XAxis dataKey="month" tickFormatter={fmtMonth} stroke="#9aa0a6" fontSize={11} minTickGap={20} />
+                <YAxis
+                  stroke="#9aa0a6" fontSize={11} width={52} tickFormatter={fmtCompact}
+                  // Headroom so the on-bar total labels aren't clipped.
+                  domain={[0, max => (max > 0 ? max * 1.18 : 1)]}
+                />
+                <Tooltip cursor={false} content={<ChartTooltip ccy={ccy} symbols={symbols} hoverKey={hoverKey} />} />
+                {symbols.map((s, i) => {
+                  const isTop = i === symbols.length - 1;
+                  const dim = hoverKey && hoverKey !== s.key;
+                  return (
+                    <Bar
+                      key={s.key} dataKey={s.key} name={s.symbol} stackId="v"
+                      fill={colorAt(i)} maxBarSize={72} fillOpacity={dim ? 0.25 : 1}
+                      radius={isTop ? [2, 2, 0, 0] : [0, 0, 0, 0]}
+                      onMouseEnter={() => setHoverKey(s.key)}
+                      onMouseLeave={() => setHoverKey(null)}
+                    >
+                      {isTop && <LabelList content={makeTotalLabel(data)} />}
+                    </Bar>
+                  );
+                })}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Scrollable, interactive legend. Hovering an item highlights that stock's
+              segments in the chart (and vice-versa) via the shared hoverKey. */}
+          <div
+            style={{
+              display: 'flex', flexWrap: 'wrap', gap: '4px 14px',
+              maxHeight: 92, overflowY: 'auto', marginTop: 10, paddingTop: 8,
+              borderTop: '1px solid var(--border)',
+            }}
+          >
+            {symbols.map((s, i) => {
+              const on = hoverKey === s.key;
+              const dim = hoverKey && !on;
+              return (
+                <div
+                  key={s.key}
+                  onMouseEnter={() => setHoverKey(s.key)}
+                  onMouseLeave={() => setHoverKey(null)}
+                  title={s.name || s.symbol}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'default',
+                    fontWeight: on ? 700 : 400, opacity: dim ? 0.45 : 1,
+                  }}
+                >
+                  <span style={{ width: 10, height: 10, borderRadius: 2, background: colorAt(i), flexShrink: 0 }} />
+                  <span style={{ color: 'var(--text)' }}>{s.symbol}</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );
