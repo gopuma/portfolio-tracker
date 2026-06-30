@@ -19,12 +19,12 @@ Three processes work together:
                           ┌────────────────────────┼────────────────────────┐
                           ▼                                                  ▼
                 ┌───────────────────┐                          ┌──────────────────────────┐
-                │  MySQL (Docker)   │                          │  ML sidecar (Docker)      │
+                │ MySQL (container) │                          │  ML sidecar (container)   │
                 │  localhost:3306   │                          │  localhost:8008  (FastAPI)│
                 └───────────────────┘                          └──────────────────────────┘
 ```
 
-- **MySQL** and the **ML sidecar** run in **Docker**.
+- **MySQL** and the **ML sidecar** run as **containers** (via Colima's Docker-compatible engine).
 - The **backend** and **frontend** run **directly on your machine** with Node.
 - The frontend dev server proxies `/api` to the backend, so you don't configure any
   API URL for local development.
@@ -37,11 +37,15 @@ Install these first:
 
 | Tool | Version | Check | Notes |
 |------|---------|-------|-------|
-| **Docker Desktop** | current | `docker --version` | Runs MySQL + the ML sidecar. On Windows, enable the **WSL2** backend. |
+| **Colima** + **Docker CLI** | current | `colima version` · `docker --version` | Lightweight container runtime for MySQL + the ML sidecar (replaces Docker Desktop). Install with `brew install colima docker docker-compose`. Windows users can use Docker Desktop (WSL2) or Podman instead. |
 | **Node.js** | **20 LTS or newer** (18.11+ minimum) | `node --version` | The backend uses `node --watch`, which needs ≥18.11. |
 | **Git** | any | `git --version` | To clone. |
 
-> The ML sidecar's Python/XGBoost/LightGBM all live **inside its Docker image** — you do
+> **Colima** provides a Docker-compatible engine, so the standard `docker` / `docker compose`
+> commands below work unchanged — no Docker Desktop required. Start it once per session with
+> `colima start` (see step 5).
+>
+> The ML sidecar's Python/XGBoost/LightGBM all live **inside its container image** — you do
 > **not** need Python installed on your machine.
 
 ---
@@ -57,7 +61,7 @@ cd portfolio-tracker
 
 ## 4. Environment variables (optional for local dev)
 
-**You can skip this for a default local run** — the code defaults match the Docker
+**You can skip this for a default local run** — the code defaults match the Compose
 defaults, so it works out of the box.
 
 Only create a `.env` if you want to change credentials/ports:
@@ -79,7 +83,15 @@ password `portfoliopass` on `127.0.0.1:3306`; sidecar on `http://localhost:8008`
 
 ---
 
-## 5. Start the Docker services (MySQL + ML sidecar)
+## 5. Start the container services (MySQL + ML sidecar)
+
+First start the Colima runtime (once per login session — it boots a small VM):
+
+```bash
+colima start                 # add e.g. --cpu 2 --memory 4 to tune resources
+```
+
+Then bring up the services with the usual Compose command:
 
 ```bash
 docker compose up -d mysql ml-sidecar
@@ -192,8 +204,9 @@ docker compose stop          # stop containers (keeps data)
 docker compose down          # remove containers (DB data persists in the named volume)
 ```
 
-Your data lives in the `mysql_data` Docker volume, so it survives `stop`/`down`. To wipe
-everything (including data): `docker compose down -v`.
+Your data lives in the `mysql_data` Compose volume, so it survives `stop`/`down`. To wipe
+everything (including data): `docker compose down -v`. (Stopping the runtime entirely:
+`colima stop` — your container data persists.)
 
 ---
 
@@ -217,6 +230,7 @@ matured ones, and refreshes the leaderboard. It only fires while the backend pro
 
 | Symptom | Fix |
 |---|---|
+| `docker: Cannot connect to the Docker daemon` / `docker compose` hangs | Colima isn't running. Start it with `colima start`, then re-run the command. Check status with `colima status`. |
 | `curl /health` on sidecar returns HTML / wrong app | Another service holds the port (e.g. RedisInsight on 8001). Set `ML_SIDECAR_PORT` to a free port in `.env`, `docker compose up -d ml-sidecar`, and set `ML_SIDECAR_URL` to match. |
 | Backend can't connect to MySQL | Is the container up & healthy? `docker compose ps`. Check DB creds match between `.env` (root) and `backend/.env`. |
 | Predictions page empty | Run `npm run backtest` (step 7.4) to populate the leaderboard. |

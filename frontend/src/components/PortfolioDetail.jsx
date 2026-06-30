@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import MptPanel from './MptPanel.jsx';
 import PortfolioValueChart from './PortfolioValueChart.jsx';
+import PortfolioAnalytics from './PortfolioAnalytics.jsx';
 
 function fmtNum(n, d = 2) {
   if (n == null || isNaN(n)) return '–';
@@ -17,6 +18,10 @@ function fmtPct(n, d = 1) {
   return `${(Number(n) * 100).toFixed(d)}%`;
 }
 const cls = n => (n == null ? '' : n > 0 ? 'up' : n < 0 ? 'down' : '');
+// Cash equivalents are holdings with the reserved symbol CASH:<CCY> (no instrument).
+const isCash = s => typeof s === 'string' && s.startsWith('CASH:');
+const cashCcy = s => (s || '').slice(5);
+const CASH_CURRENCIES = ['USD', 'KRW'];
 // Convert a native-currency amount into the portfolio base currency (mirrors the
 // backend's convert()) so KRW holdings (e.g. the KRX gold spot) read in dollars.
 function toBase(amount, currency, base, krwPerUsd) {
@@ -49,8 +54,9 @@ export default function PortfolioDetail() {
   const [mptOpen, setMptOpen] = useState(false);
   const [sortKey, setSortKey] = useState(null);  // column to sort holdings by
   const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
+  const [ver, setVer] = useState(0);             // bumped on every reload so the value chart refetches after edits
 
-  const load = () => api.portfolioById(id).then(setData).catch(e => setErr(e.message));
+  const load = () => api.portfolioById(id).then(d => { setData(d); setVer(v => v + 1); }).catch(e => setErr(e.message));
   useEffect(() => { setLoading(true); load().finally(() => setLoading(false)); /* eslint-disable-next-line */ }, [id]);
 
   const deletePortfolio = async () => {
@@ -74,7 +80,11 @@ export default function PortfolioDetail() {
 
   const t = data.totals;
   const ccy = data.base_currency;
-  const full = data.holdings.length >= data.max_holdings;
+  // Show the securities/cash split on the value & cost cards only when cash is held.
+  const hasCash = (t.cash_value || 0) > 0;
+  // Cash doesn't count toward the securities cap.
+  const securityCount = data.holdings.filter(h => !isCash(h.symbol)).length;
+  const full = securityCount >= data.max_holdings;
   const hasHoldings = data.holdings.length > 0;
 
   // Won-denominated mirror of the value totals (shown only for non-KRW portfolios).
@@ -83,9 +93,12 @@ export default function PortfolioDetail() {
   const showKrwCards = ccy !== 'KRW' && krwPerUsd != null;
 
   // MPT optimizes over distinct instruments, so collapse multiple lots of the
-  // same symbol into one, summing their weights.
+  // same symbol into one, summing their weights. Cash is excluded (not tradable).
   const mptWeights = {};
-  for (const h of data.holdings) mptWeights[h.symbol] = (mptWeights[h.symbol] || 0) + (h.weight || 0);
+  for (const h of data.holdings) {
+    if (isCash(h.symbol)) continue;
+    mptWeights[h.symbol] = (mptWeights[h.symbol] || 0) + (h.weight || 0);
+  }
   const mptSymbols = Object.keys(mptWeights);
 
   // Click a header to sort by that column; click again to flip direction.
@@ -174,7 +187,7 @@ export default function PortfolioDetail() {
             </h1>
           )}
           <div style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 4 }}>
-            Base currency {ccy} · {data.holdings.length}/{data.max_holdings} holdings
+            Base currency {ccy} · {securityCount}/{data.max_holdings} holdings
             {data.krw_per_usd ? <> · USD/KRW {fmtNum(data.krw_per_usd)}</> : null}
           </div>
         </div>
@@ -191,26 +204,45 @@ export default function PortfolioDetail() {
         </button>
       </div>
 
-      <div className="grid-6">
-        <Metric label="Market Value" value={fmtMoney(t.market_value, ccy)} />
-        <Metric label="Cost Basis" value={fmtMoney(t.cost_basis, ccy)} />
+      <div className="grid-5">
+        <Metric
+          label="Market Value" value={fmtMoney(t.market_value, ccy)}
+          sub={hasCash && <SecCashSub securities={t.securities_value} cash={t.cash_value} ccy={ccy} fmt={fmtMoney} />}
+        />
+        <Metric
+          label="Cost Basis" value={fmtMoney(t.cost_basis, ccy)}
+          sub={hasCash && <SecCashSub securities={t.securities_cost} cash={t.cash_value} ccy={ccy} fmt={fmtMoney} />}
+        />
         <Metric label="Total Gain" value={fmtMoney(t.gain, ccy)} color={cls(t.gain)} />
-        <Metric label="Inception" value={fmtPct(t.return_inception)} color={cls(t.return_inception)} />
-        <Metric label="1Y" value={fmtPct(t.return_1y)} color={cls(t.return_1y)} />
-        <Metric label="3Y / 5Y" value={`${fmtPct(t.return_3y)} / ${fmtPct(t.return_5y)}`} />
+        <Metric
+          label="Inception" value={fmtPct(t.return_inception)} color={cls(t.return_inception)}
+          sub={hasCash && <CashInclSub value={t.return_inception_with_cash} />}
+        />
+        <Metric
+          label="YTD" value={fmtPct(t.return_ytd)} color={cls(t.return_ytd)}
+          sub={hasCash && <CashInclSub value={t.return_ytd_with_cash} />}
+        />
       </div>
 
       {showKrwCards && (
-        <div className="grid-6" style={{ marginTop: 16 }}>
-          <Metric label="Market Value (KRW)" value={fmtMoney(toKrw(t.market_value), 'KRW')} />
-          <Metric label="Cost Basis (KRW)" value={fmtMoney(toKrw(t.cost_basis), 'KRW')} />
+        <div className="grid-3" style={{ marginTop: 16 }}>
+          <Metric
+            label="Market Value (KRW)" value={fmtMoney(toKrw(t.market_value), 'KRW')}
+            sub={hasCash && <SecCashSub securities={toKrw(t.securities_value)} cash={toKrw(t.cash_value)} ccy="KRW" fmt={fmtMoney} />}
+          />
+          <Metric
+            label="Cost Basis (KRW)" value={fmtMoney(toKrw(t.cost_basis), 'KRW')}
+            sub={hasCash && <SecCashSub securities={toKrw(t.securities_cost)} cash={toKrw(t.cash_value)} ccy="KRW" fmt={fmtMoney} />}
+          />
           <Metric label="Total Gain (KRW)" value={fmtMoney(toKrw(t.gain), 'KRW')} color={cls(t.gain)} />
         </div>
       )}
 
-      {hasHoldings && <PortfolioValueChart portfolioId={id} base={ccy} />}
+      {hasHoldings && <PortfolioValueChart portfolioId={id} base={ccy} reloadKey={ver} />}
 
       <AddHoldingForm portfolioId={id} full={full} onAdded={load} />
+
+      <AddCashForm portfolioId={id} onAdded={load} />
 
       <div className="panel">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
@@ -266,8 +298,17 @@ export default function PortfolioDetail() {
                       </td>
                     )}
                     <td>
-                      <Link to={`/instruments/${encodeURIComponent(h.symbol)}`}>{h.symbol}</Link>
-                      <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>{h.display_name}</div>
+                      {isCash(h.symbol) ? (
+                        <>
+                          <span>💵 Cash</span>
+                          <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>{cashCcy(h.symbol)}</div>
+                        </>
+                      ) : (
+                        <>
+                          <Link to={`/instruments/${encodeURIComponent(h.symbol)}`}>{h.symbol}</Link>
+                          <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>{h.display_name}</div>
+                        </>
+                      )}
                     </td>
                     <td
                       onDoubleClick={() => !removeMode && startEditAccount(h)}
@@ -314,11 +355,13 @@ export default function PortfolioDetail() {
                     </td>
                     <td
                       className="num"
-                      onDoubleClick={() => !removeMode && startEditCost(h)}
-                      title={removeMode ? undefined : 'Double-click to edit cost basis'}
-                      style={removeMode ? undefined : { cursor: 'pointer' }}
+                      onDoubleClick={() => !removeMode && !isCash(h.symbol) && startEditCost(h)}
+                      title={removeMode || isCash(h.symbol) ? undefined : 'Double-click to edit cost basis'}
+                      style={removeMode || isCash(h.symbol) ? undefined : { cursor: 'pointer' }}
                     >
-                      {editCostId === h.id ? (
+                      {isCash(h.symbol) ? (
+                        <span style={{ color: 'var(--text-dim)' }}>—</span>
+                      ) : editCostId === h.id ? (
                         <input
                           autoFocus
                           type="number"
@@ -340,14 +383,20 @@ export default function PortfolioDetail() {
                       )}
                     </td>
                     <td className="num">
-                      {fmtNum(h.latest_close)}
-                      {h.currency !== ccy && h.latest_close != null && data.krw_per_usd && (
-                        <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>≈ {fmtMoney(toBase(h.latest_close, h.currency, ccy, data.krw_per_usd), ccy, 2)}</div>
+                      {isCash(h.symbol) ? (
+                        <span style={{ color: 'var(--text-dim)' }}>—</span>
+                      ) : (
+                        <>
+                          {fmtNum(h.latest_close)}
+                          {h.currency !== ccy && h.latest_close != null && data.krw_per_usd && (
+                            <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>≈ {fmtMoney(toBase(h.latest_close, h.currency, ccy, data.krw_per_usd), ccy, 2)}</div>
+                          )}
+                        </>
                       )}
                     </td>
                     <td className="num">{fmtMoney(h.market_value_base, ccy)}</td>
                     <td className="num">{fmtPct(h.weight, 0)}</td>
-                    <td className={`num ${cls(h.return_inception)}`}>{fmtPct(h.return_inception)}</td>
+                    <td className={`num ${cls(h.return_inception)}`}>{isCash(h.symbol) ? <span style={{ color: 'var(--text-dim)' }}>—</span> : fmtPct(h.return_inception)}</td>
                     <td className={`num ${cls(h.return_1y)}`}>{fmtPct(h.return_1y)}</td>
                     <td className={`num ${cls(h.return_3y)}`}>{fmtPct(h.return_3y)}</td>
                     <td className={`num ${cls(h.return_5y)}`}>{fmtPct(h.return_5y)}</td>
@@ -372,16 +421,46 @@ export default function PortfolioDetail() {
           </div>
         ))}
       </div>
+
+      {hasHoldings && (
+        <PortfolioAnalytics
+          portfolioId={id}
+          nameBySym={Object.fromEntries(data.holdings.map(h => [h.symbol, h.display_name]))}
+          reloadKey={ver}
+        />
+      )}
     </>
   );
 }
 
-function Metric({ label, value, color }) {
+function Metric({ label, value, color, sub }) {
   return (
     <div className="panel">
       <div className="metric-label">{label}</div>
       <div className={`metric ${color || ''}`} style={{ fontSize: 20 }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6, lineHeight: 1.5 }}>{sub}</div>}
     </div>
+  );
+}
+
+// Cash-inclusive return shown beneath the securities-only headline on the YTD /
+// Inception cards — larger and color-coded so it stands out as a secondary figure.
+function CashInclSub({ value }) {
+  return (
+    <span style={{ marginTop: 2, display: 'inline-block' }}>
+      <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>incl. cash </span>
+      <span className={cls(value)} style={{ fontSize: 13, fontWeight: 600 }}>{fmtPct(value)}</span>
+    </span>
+  );
+}
+
+// Breakdown sub-line for the value/cost cards: securities vs. cash, in the given currency.
+function SecCashSub({ securities, cash, ccy, fmt }) {
+  return (
+    <>
+      <div>Securities {fmt(securities, ccy)}</div>
+      <div>Cash <span style={{ color: 'var(--text)' }}>{fmt(cash, ccy)}</span></div>
+    </>
   );
 }
 
@@ -569,6 +648,64 @@ function Labeled({ label, children }) {
     <div>
       <div className="metric-label" style={{ marginBottom: 4 }}>{label}</div>
       {children}
+    </div>
+  );
+}
+
+// Add a cash equivalent (USD/KRW) as a holding. Same currency + same account edits
+// the existing balance; amounts are valued 1:1 and counted in totals, weights, and
+// the value chart (but excluded from return/risk analytics).
+function AddCashForm({ portfolioId, onAdded }) {
+  const [currency, setCurrency] = useState('USD');
+  const [amount, setAmount] = useState('');
+  const [account, setAccount] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [ok, setOk] = useState(null);
+
+  const submit = async (e) => {
+    e?.preventDefault();
+    const amt = Number(amount);
+    if (!(amt > 0)) { setErr('Enter a positive amount'); return; }
+    setBusy(true); setErr(null); setOk(null);
+    try {
+      const r = await api.addCash(portfolioId, { currency, amount: amt, account: account.trim() || undefined });
+      setOk(`Added ${fmtNum(r.amount, 0)} ${r.currency}${r.account ? ` (${r.account})` : ''} cash`);
+      setAmount(''); setAccount('');
+      onAdded?.();
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="panel">
+      <h2>Add Cash</h2>
+      <form onSubmit={submit} style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+        <Labeled label="Currency">
+          <select value={currency} onChange={e => setCurrency(e.target.value)} disabled={busy} style={{ ...field, width: 100 }}>
+            {CASH_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </Labeled>
+        <Labeled label="Amount">
+          <input autoFocus type="number" min={0} step="any" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0" disabled={busy} style={{ ...field, width: 140 }} />
+        </Labeled>
+        <Labeled label="Account (optional)">
+          <input type="text" value={account} onChange={e => setAccount(e.target.value)} placeholder="e.g. Roth, 401k" disabled={busy} maxLength={64} style={{ ...field, width: 140 }} />
+        </Labeled>
+        <button className="btn" type="submit" disabled={busy || !(Number(amount) > 0)}>
+          {busy ? 'Adding…' : 'Add cash'}
+        </button>
+        {ok && <span style={{ fontSize: 12, color: 'var(--green)' }}>{ok}</span>}
+        {err && <span style={{ fontSize: 12, color: 'var(--red)' }}>Error: {err}</span>}
+      </form>
+      <p style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 0, marginTop: 12, lineHeight: 1.6 }}>
+        Cash is valued 1:1 in its currency and counts toward <strong style={{ color: 'var(--text)' }}>Market Value</strong> and
+        weights. Adjust a balance later by double-clicking its amount in the Holdings table; same currency + same account updates the
+        existing balance. Return/risk analytics exclude cash.
+      </p>
     </div>
   );
 }
