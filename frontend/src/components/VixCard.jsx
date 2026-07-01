@@ -45,6 +45,8 @@ export default function VixCard() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Live quote (or the latest close when the US market is closed), fetched on load.
+  const [quote, setQuote] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,13 +59,25 @@ export default function VixCard() {
     return () => { cancelled = true; };
   }, [days]);
 
+  // On every load, pull a live quote: shows the live level while the market is open,
+  // otherwise the latest close. Independent of the chart's period selector.
+  useEffect(() => {
+    let cancelled = false;
+    api.liveQuotes(['^VIX'])
+      .then(d => { if (!cancelled) setQuote(d.quotes?.['^VIX'] || null); })
+      .catch(() => { /* fall back to the chart's last close below */ });
+    return () => { cancelled = true; };
+  }, []);
+
   const chartData = useMemo(
     () => (data?.prices || []).map(p => ({ date: (p.trade_date || '').slice(0, 10), vix: Number(p.close_px) })),
     [data]
   );
 
   const first = chartData[0]?.vix;
-  const last = chartData.at(-1)?.vix;
+  // Prefer the live/last quote for the headline; fall back to the chart's final close.
+  const liveOpen = quote?.market_state === 'REGULAR';
+  const last = quote?.price != null ? Number(quote.price) : chartData.at(-1)?.vix;
   const change = first != null && last != null ? last - first : null;
   const changePct = first ? change / first : null;
   // VIX up = more fear (red); VIX down = calmer (green) — inverted vs. a normal asset.
@@ -102,6 +116,15 @@ export default function VixCard() {
 
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, marginTop: 12, flexWrap: 'wrap' }}>
         <div className="metric">{fmtNum(last)}</div>
+        {quote && (
+          liveOpen ? (
+            <span style={{ fontSize: 11, color: 'var(--green)', display: 'flex', alignItems: 'center', gap: 5, alignSelf: 'center' }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} /> LIVE
+            </span>
+          ) : (
+            <span style={{ fontSize: 11, color: 'var(--text-dim)', alignSelf: 'center' }}>At close</span>
+          )
+        )}
         <span className="pill" style={{ background: 'transparent', border: `1px solid ${reg.color}`, color: reg.color }}>{reg.label}</span>
         {change != null && (
           <div className={changeColor} style={{ fontSize: 14 }}>

@@ -61,3 +61,45 @@ test('multi-share weighting: shares scale the start/end values', () => {
   const { totals } = computePortfolio(rows, 'USD', null);
   assert.ok(Math.abs(totals.return_1y - 0.2) < 1e-12);
 });
+
+// A cash equivalent row as loadHoldings() returns it (symbol CASH:<CCY>, no prices).
+const cashRow = (o) => ({
+  id: o.id, symbol: `CASH:${o.currency || 'USD'}`, account: o.account || '',
+  display_name: null, currency: o.currency || 'USD', shares: o.amount, cost_price: 1,
+  latest_close: null, close_ytd: null, close_1y: null, close_3y: null, close_5y: null,
+});
+
+test('cash is valued 1:1 and counted in market value and weights', () => {
+  // $150 of stock (1 sh @150) + $50 cash => MV 200, gain 50 (stock only), cash weight 25%.
+  const rows = [
+    row({ id: 1, symbol: 'A', shares: 1, cost_price: 100, latest_close: 150 }),
+    cashRow({ id: 2, amount: 50 }),
+  ];
+  const { holdings, totals } = computePortfolio(rows, 'USD', null);
+
+  const cash = holdings.find(h => h.is_cash);
+  assert.equal(cash.market_value_base, 50);
+  assert.equal(cash.return_inception, 0);
+  assert.ok(Math.abs(cash.weight - 0.25) < 1e-12);
+
+  assert.equal(totals.market_value, 200);
+  assert.equal(totals.gain, 50);
+});
+
+test('inception return is securities-only (cash does not dilute it)', () => {
+  // Stock +50% ($100 -> $150). Adding $1000 cash must NOT pull inception toward 0.
+  const rows = [
+    row({ id: 1, symbol: 'A', shares: 1, cost_price: 100, latest_close: 150 }),
+    cashRow({ id: 2, amount: 1000 }),
+  ];
+  const { totals } = computePortfolio(rows, 'USD', null);
+  assert.ok(Math.abs(totals.return_inception - 0.5) < 1e-12);
+});
+
+test('cash converts to base currency at the given FX', () => {
+  // KRW base, USD cash of $100 at 1300 KRW/USD => 130,000 KRW.
+  const rows = [cashRow({ id: 1, amount: 100, currency: 'USD' })];
+  const { holdings, totals } = computePortfolio(rows, 'KRW', 1300);
+  assert.equal(holdings[0].market_value_base, 130000);
+  assert.equal(totals.market_value, 130000);
+});

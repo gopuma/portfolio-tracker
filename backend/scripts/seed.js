@@ -21,12 +21,16 @@ const INSTRUMENTS = [
 
   // FX (used to convert KRX gold KRW into USD for the gold-gap calculation)
   { symbol: 'KRW=X', display_name: 'USD/KRW Spot',                            asset_class: 'CASH',     currency: 'KRW', market: 'FX', category: 'fx-usdkrw',      notes: 'KRW per USD. Hidden from market sections; used by /api/gold-gap.' },
+  { symbol: 'JPYKRW=X', display_name: 'JPY/KRW Spot',                         asset_class: 'CASH',     currency: 'KRW', market: 'FX', category: 'fx-jpykrw',      notes: 'KRW per JPY. Shown on the overview FX cards.' },
 
   // Volatility index (market indicator — hidden from holdings/analytics, shown on its own card)
   { symbol: '^VIX',  display_name: 'CBOE Volatility Index (VIX)',             asset_class: 'ETF',      currency: 'USD', market: 'INDEX', category: 'volatility-index', notes: 'CBOE VIX — implied 30-day S&P 500 volatility. asset_class is a placeholder (ENUM); excluded from holdings & analytics.' },
 
   // Market benchmarks for CAPM alpha/beta (hidden from holdings/analytics; asset_class is an ENUM placeholder)
   { symbol: '^GSPC', display_name: 'S&P 500 Index',                           asset_class: 'ETF',      currency: 'USD', market: 'INDEX', category: 'benchmark-us', notes: 'US market benchmark for alpha/beta of US instruments.' },
+  { symbol: '^IXIC', display_name: 'NASDAQ Composite Index',                  asset_class: 'ETF',      currency: 'USD', market: 'INDEX', category: 'benchmark-us', notes: 'NASDAQ Composite — shown on the overview index cards.' },
+  { symbol: '^DJI',  display_name: 'Dow Jones Industrial Average',            asset_class: 'ETF',      currency: 'USD', market: 'INDEX', category: 'benchmark-us', notes: 'Dow Jones Industrial Average — shown on the overview index cards.' },
+  { symbol: '^SOX',  display_name: 'PHLX Semiconductor Index',                asset_class: 'ETF',      currency: 'USD', market: 'INDEX', category: 'benchmark-us', notes: 'Philadelphia Semiconductor Index (SOX) — shown on the overview index cards.' },
   { symbol: '^KS11', display_name: 'KOSPI Composite Index',                   asset_class: 'ETF',      currency: 'KRW', market: 'INDEX', category: 'benchmark-kr', notes: 'Korean market benchmark for alpha/beta of KR instruments.' },
 
   // US Stocks / mREIT

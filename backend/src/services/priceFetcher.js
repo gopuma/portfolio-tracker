@@ -80,7 +80,10 @@ export async function searchSymbols(q, count = 8, opts = {}) {
 
 /**
  * Batch live quotes for many symbols in one Yahoo call. Returns a map
- * symbol -> { price, currency, time }. Used by the audit to cross-check stored prices.
+ * symbol -> { price, currency, time, market_state, previous_close, change, change_percent }.
+ * `market_state` is Yahoo's session state ('REGULAR' when the market is open; 'PRE',
+ * 'POST', 'CLOSED', etc. otherwise). When the market is closed, `price` is the last
+ * close. Used by the audit and the overview's live cards.
  */
 export async function fetchQuotes(symbols) {
   if (!symbols || symbols.length === 0) return {};
@@ -89,7 +92,18 @@ export async function fetchQuotes(symbols) {
     const arr = Array.isArray(res) ? res : [res];
     const out = {};
     for (const q of arr) {
-      if (q?.symbol) out[q.symbol] = { price: q.regularMarketPrice ?? null, currency: q.currency ?? null, time: q.regularMarketTime ?? null };
+      if (!q?.symbol) continue;
+      const price = q.regularMarketPrice ?? null;
+      const prev = q.regularMarketPreviousClose ?? null;
+      out[q.symbol] = {
+        price,
+        currency: q.currency ?? null,
+        time: q.regularMarketTime ?? null,
+        market_state: q.marketState ?? null,
+        previous_close: prev,
+        change: q.regularMarketChange ?? (price != null && prev != null ? price - prev : null),
+        change_percent: q.regularMarketChangePercent ?? null,
+      };
     }
     return out;
   } catch {

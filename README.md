@@ -40,7 +40,11 @@ portfolio-tracker/
 
 ### 1. Start MySQL + ML sidecar
 
+Uses [Colima](https://github.com/abiosoft/colima) as a lightweight, Docker-compatible
+runtime (no Docker Desktop needed — `brew install colima docker docker-compose`):
+
 ```bash
+colima start            # start the container runtime (once per session)
 docker compose up -d
 ```
 

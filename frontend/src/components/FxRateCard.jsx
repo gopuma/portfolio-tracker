@@ -46,22 +46,36 @@ const PRESETS = [
 
 const MAX_DAYS = 1825;
 
-export default function FxRateCard() {
+/**
+ * FX rate card with chart, trailing averages, and a live overlay. Defaults to USD/KRW
+ * (`KRW=X`, "KRW per USD") but is reusable for any FX pair — e.g. JPY/KRW via
+ * symbol="JPYKRW=X", unit="KRW per JPY", pairShort="KRW/JPY".
+ */
+export default function FxRateCard({
+  symbol = 'KRW=X',
+  title = 'KRW / USD Exchange Rate',
+  unit = 'KRW per USD',
+  pairShort = 'KRW/USD',
+}) {
   const [days, setDays] = useState(180); // default: last 6 months
   const [draft, setDraft] = useState('180'); // custom-period input buffer
   const [data, setData] = useState(null);
   const [history, setHistory] = useState(null); // full 5y series, for the averages
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [live, setLive] = useState(null);          // { price, time } real-time quote
+  const [live, setLive] = useState(null);          // { price, time, market_state } real-time quote
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveErr, setLiveErr] = useState(null);
 
   const getLive = () => {
     setLiveLoading(true);
     setLiveErr(null);
-    api.fxLive()
-      .then(d => setLive(d))
+    api.liveQuotes([symbol])
+      .then(d => {
+        const q = d.quotes?.[symbol];
+        if (q && q.price != null) setLive(q);
+        else throw new Error('No live quote');
+      })
       .catch(e => setLiveErr(e.message))
       .finally(() => setLiveLoading(false));
   };
@@ -70,22 +84,26 @@ export default function FxRateCard() {
     let cancelled = false;
     setLoading(true);
     setErr(null);
-    api.fxRate(days)
+    api.prices(symbol, days)
       .then(d => { if (!cancelled) setData(d); })
       .catch(e => { if (!cancelled) setErr(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [days]);
+  }, [symbol, days]);
 
   // Fetch the full 5y history once so the 1Y/3Y/5Y averages stay fixed
   // regardless of the chart's selected period.
   useEffect(() => {
     let cancelled = false;
-    api.fxRate(MAX_DAYS)
+    api.prices(symbol, MAX_DAYS)
       .then(d => { if (!cancelled) setHistory(d.prices || []); })
       .catch(() => { /* averages just show – if this fails */ });
     return () => { cancelled = true; };
-  }, []);
+  }, [symbol]);
+
+  // On load, pull the live rate automatically (live while the FX market is open, else
+  // the latest close) so the card reflects the current rate without a manual click.
+  useEffect(() => { getLive(); /* eslint-disable-next-line */ }, [symbol]);
 
   // Average close over the most recent N days of the 5y history.
   const averages = useMemo(() => {
@@ -120,6 +138,8 @@ export default function FxRateCard() {
 
   // Human label for the selected window: a preset name (6M/1Y/…) or "<n> days".
   const periodLabel = PRESETS.find(p => p.days === days)?.label || `${days} day${days === 1 ? '' : 's'}`;
+  // Small rates (e.g. KRW/JPY ≈ 9.5) need decimals on the Y axis; large ones (KRW/USD ≈ 1500) don't.
+  const yDigits = last != null && Math.abs(last) < 100 ? 2 : 0;
 
   const applyDraft = () => {
     const n = Math.round(Number(draft));
@@ -130,13 +150,13 @@ export default function FxRateCard() {
   return (
     <div className="panel">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <h2 style={{ margin: 0 }}>KRW / USD Exchange Rate</h2>
+        <h2 style={{ margin: 0 }}>{title}</h2>
         <AsOf date={chartData.at(-1)?.date} />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12, flexWrap: 'wrap' }}>
         <div className="metric">
-          {fmtNum(last)} <span className="unit">KRW per USD</span>
+          {fmtNum(last)} <span className="unit">{unit}</span>
         </div>
         {change != null && (
           <div className={changeColor} style={{ fontSize: 14 }}>
@@ -149,21 +169,21 @@ export default function FxRateCard() {
           {live && (
             <div style={{ fontSize: 13, color: '#f5a623', display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ display: 'inline-block', width: 18, borderTop: '2px dashed #f5a623' }} />
-              Live {fmtNum(live.price)} KRW/USD
+              {live.market_state === 'REGULAR' ? 'Live' : 'Latest close'} {fmtNum(live.price)} {pairShort}
               {live.time && <span style={{ color: 'var(--text-dim)' }}>· {new Date(live.time).toLocaleString()} {tzAbbrev(new Date(live.time))}</span>}
             </div>
           )}
           {liveErr && <span style={{ fontSize: 12, color: 'var(--red)' }}>Live rate failed: {liveErr}</span>}
-          <button className="btn" onClick={getLive} disabled={liveLoading} title="Fetch the current real-time USD/KRW rate and overlay it on the chart as a dashed line">
+          <button className="btn" onClick={getLive} disabled={liveLoading} title={`Fetch the current real-time ${pairShort} rate and overlay it on the chart as a dashed line`}>
             {liveLoading ? 'Fetching…' : '↻ Get live rate'}
           </button>
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginTop: 14 }}>
-        <AvgStat label="1-Year Avg" value={averages.y1} current={last} />
-        <AvgStat label="3-Year Avg" value={averages.y3} current={last} />
-        <AvgStat label="5-Year Avg" value={averages.y5} current={last} />
+        <AvgStat label="1-Year Avg" value={averages.y1} current={last} unit={pairShort} />
+        <AvgStat label="3-Year Avg" value={averages.y3} current={last} unit={pairShort} />
+        <AvgStat label="5-Year Avg" value={averages.y5} current={last} unit={pairShort} />
       </div>
 
       {/* Chart period controls — placed just above the chart they drive. */}
@@ -204,17 +224,17 @@ export default function FxRateCard() {
       ) : err ? (
         <div className="error">Failed to load: {err}</div>
       ) : chartData.length === 0 ? (
-        <div className="loading">No FX history yet — backfill <code>KRW=X</code>.</div>
+        <div className="loading">No FX history yet — backfill <code>{symbol}</code>.</div>
       ) : (
         <div style={{ width: '100%', height: 300, marginTop: 12 }}>
           <ResponsiveContainer>
             <LineChart data={chartData}>
               <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
               <XAxis dataKey="date" stroke="#9aa0a6" fontSize={11} minTickGap={40} />
-              <YAxis stroke="#9aa0a6" fontSize={11} domain={['auto', 'auto']} tickFormatter={v => fmtNum(v, 0)} width={48} />
+              <YAxis stroke="#9aa0a6" fontSize={11} domain={['auto', 'auto']} tickFormatter={v => fmtNum(v, yDigits)} width={48} />
               <Tooltip
                 contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }}
-                formatter={v => [`${fmtNum(v)} KRW/USD`, 'Rate']}
+                formatter={v => [`${fmtNum(v)} ${pairShort}`, 'Rate']}
               />
               <Line type="monotone" dataKey="rate" stroke="#4a9eff" dot={false} strokeWidth={2} />
               {live?.price != null && (
@@ -237,14 +257,14 @@ export default function FxRateCard() {
 }
 
 // One average figure, with the current rate's deviation from that average.
-function AvgStat({ label, value, current }) {
+function AvgStat({ label, value, current, unit = 'KRW/USD' }) {
   const diffPct = value && current != null ? current / value - 1 : null;
   const color = diffPct == null ? '' : diffPct > 0 ? 'up' : diffPct < 0 ? 'down' : '';
   return (
     <div style={{ textAlign: 'left' }}>
       <div className="metric-label">{label}</div>
       <div style={{ fontSize: 18, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-        {fmtNum(value)} <span style={{ fontSize: 11, color: 'var(--text-dim)', fontWeight: 400 }}>KRW/USD</span>
+        {fmtNum(value)} <span style={{ fontSize: 11, color: 'var(--text-dim)', fontWeight: 400 }}>{unit}</span>
       </div>
       {diffPct != null && (
         <div className={color} style={{ fontSize: 12 }}>
