@@ -67,6 +67,7 @@ export const api = {
   instrumentStats: (symbol, days = 365, rf = 0) => get(`/analytics/${encodeURIComponent(symbol)}?days=${days}&rf=${rf}`),
   optimize:     (symbols, days = 365, rf = 0) => postJson(`/analytics/optimize`, { symbols, days, rf }),
   audit:        (live = false)           => get(`/audit${live ? '?live=1' : ''}`),
+  research:     (symbol, currency = 'native') => get(`/research/${encodeURIComponent(symbol)}?currency=${encodeURIComponent(currency)}`),
 
   // Portfolios
   searchSymbols: (q, market)             => get(`/instruments/search?q=${encodeURIComponent(q)}${market ? `&market=${encodeURIComponent(market)}` : ''}`),
@@ -82,6 +83,9 @@ export const api = {
   addCash:       (id, body)              => postJson(`/portfolios/${id}/cash`, body),
   updateHolding: (id, holdingId, body)   => patchJson(`/portfolios/${id}/holdings/${holdingId}`, body),
   removeHolding: (id, holdingId)         => del(`/portfolios/${id}/holdings/${holdingId}`),
+  transactions:  (id)                    => get(`/portfolios/${id}/transactions`),
+  addTransaction: (id, body)             => postJson(`/portfolios/${id}/transactions`, body),
+  deleteTransaction: (id, txId)          => del(`/portfolios/${id}/transactions/${txId}`),
 
   // Prediction competition
   leaderboard:   (horizon = 5, symbol = '') => get(`/leaderboard?horizon=${horizon}${symbol ? `&symbol=${encodeURIComponent(symbol)}` : ''}`),

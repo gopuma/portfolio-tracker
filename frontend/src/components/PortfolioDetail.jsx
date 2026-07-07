@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import MptPanel from './MptPanel.jsx';
 import PortfolioValueChart from './PortfolioValueChart.jsx';
 import PortfolioAnalytics from './PortfolioAnalytics.jsx';
+import TransactionsPanel from './TransactionsPanel.jsx';
 
 function fmtNum(n, d = 2) {
   if (n == null || isNaN(n)) return '–';
@@ -82,6 +83,8 @@ export default function PortfolioDetail() {
   const ccy = data.base_currency;
   // Show the securities/cash split on the value & cost cards only when cash is held.
   const hasCash = (t.cash_value || 0) > 0;
+  // Distinct account labels already used in this portfolio — offered as suggestions in the add forms.
+  const accounts = [...new Set(data.holdings.map(h => (h.account || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   // Cash doesn't count toward the securities cap.
   const securityCount = data.holdings.filter(h => !isCash(h.symbol)).length;
   const full = securityCount >= data.max_holdings;
@@ -240,11 +243,11 @@ export default function PortfolioDetail() {
 
       {hasHoldings && <PortfolioValueChart portfolioId={id} base={ccy} reloadKey={ver} />}
 
-      <AddHoldingForm portfolioId={id} full={full} onAdded={load} />
-
-      <AddCashForm portfolioId={id} onAdded={load} />
-
       <div className="panel">
+        <AddHoldingForm portfolioId={id} full={full} onAdded={load} embedded accounts={accounts} />
+        <AddCashForm portfolioId={id} onAdded={load} embedded accounts={accounts} />
+        <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0 16px' }} />
+
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
           <h2 style={{ margin: 0 }}>Holdings</h2>
           {hasHoldings && (
@@ -422,6 +425,8 @@ export default function PortfolioDetail() {
         ))}
       </div>
 
+      <TransactionsPanel portfolioId={id} baseCurrency={ccy} onChanged={load} />
+
       {hasHoldings && (
         <PortfolioAnalytics
           portfolioId={id}
@@ -481,7 +486,7 @@ function SortTh({ label, col, num, sortKey, sortDir, onSort }) {
 
 // Register a ticker by searching for it by name or symbol, picking a match, then
 // entering volume. Price auto-fills with the latest close but can be overridden.
-function AddHoldingForm({ portfolioId, full, onAdded }) {
+function AddHoldingForm({ portfolioId, full, onAdded, embedded, accounts = [] }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -563,8 +568,8 @@ function AddHoldingForm({ portfolioId, full, onAdded }) {
   };
 
   return (
-    <div className="panel">
-      <h2>Register a Ticker</h2>
+    <div className={embedded ? '' : 'panel'} style={embedded ? { marginBottom: 16 } : undefined}>
+      <h2 style={{ marginTop: 0 }}>Register a Ticker</h2>
       {full ? (
         <div style={{ color: 'var(--amber)', fontSize: 13 }}>This portfolio is full (max 30 holdings). Remove one to add another.</div>
       ) : !selected ? (
@@ -623,7 +628,7 @@ function AddHoldingForm({ portfolioId, full, onAdded }) {
             <input type="number" min={0} step="any" value={price} onChange={e => setPrice(e.target.value)} placeholder="latest close" disabled={busy} style={{ ...field, width: 130 }} />
           </Labeled>
           <Labeled label="Account (optional)">
-            <input type="text" value={account} onChange={e => setAccount(e.target.value)} placeholder="e.g. Roth, 401k" disabled={busy} maxLength={64} style={{ ...field, width: 140 }} />
+            <AccountInput value={account} onChange={setAccount} accounts={accounts} disabled={busy} />
           </Labeled>
           <button className="btn" type="submit" disabled={busy || !(Number(shares) > 0)}>
             {busy ? 'Adding…' : 'Add holding'}
@@ -652,10 +657,42 @@ function Labeled({ label, children }) {
   );
 }
 
+// Account combobox: type freely (creating a new account) or pick from the portfolio's
+// existing accounts in a theme-styled dropdown (native <datalist> renders unreadable on dark).
+function AccountInput({ value, onChange, accounts = [], disabled }) {
+  const [open, setOpen] = useState(false);
+  const matches = accounts.filter(a => a.toLowerCase().includes((value || '').toLowerCase()));
+  return (
+    <div style={{ position: 'relative', width: 160 }}>
+      <input
+        type="text" value={value} maxLength={64} disabled={disabled}
+        onChange={e => onChange(e.target.value)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="Pick or type new…"
+        style={{ ...field, width: '100%' }}
+      />
+      {open && matches.length > 0 && (
+        <div style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, marginTop: 4, background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 6, maxHeight: 200, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+          {matches.map(a => (
+            <button
+              key={a} type="button"
+              onClick={() => { onChange(a); setOpen(false); }}
+              style={{ display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--text)', padding: '6px 8px', cursor: 'pointer', fontSize: 13 }}
+            >
+              {a}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Add a cash equivalent (USD/KRW) as a holding. Same currency + same account edits
 // the existing balance; amounts are valued 1:1 and counted in totals, weights, and
 // the value chart (but excluded from return/risk analytics).
-function AddCashForm({ portfolioId, onAdded }) {
+function AddCashForm({ portfolioId, onAdded, embedded, accounts = [] }) {
   const [currency, setCurrency] = useState('USD');
   const [amount, setAmount] = useState('');
   const [account, setAccount] = useState('');
@@ -681,8 +718,8 @@ function AddCashForm({ portfolioId, onAdded }) {
   };
 
   return (
-    <div className="panel">
-      <h2>Add Cash</h2>
+    <div className={embedded ? '' : 'panel'} style={embedded ? { marginBottom: 4 } : undefined}>
+      <h2 style={{ marginTop: 0 }}>Add Cash</h2>
       <form onSubmit={submit} style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
         <Labeled label="Currency">
           <select value={currency} onChange={e => setCurrency(e.target.value)} disabled={busy} style={{ ...field, width: 100 }}>
@@ -693,7 +730,7 @@ function AddCashForm({ portfolioId, onAdded }) {
           <input autoFocus type="number" min={0} step="any" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0" disabled={busy} style={{ ...field, width: 140 }} />
         </Labeled>
         <Labeled label="Account (optional)">
-          <input type="text" value={account} onChange={e => setAccount(e.target.value)} placeholder="e.g. Roth, 401k" disabled={busy} maxLength={64} style={{ ...field, width: 140 }} />
+          <AccountInput value={account} onChange={setAccount} accounts={accounts} disabled={busy} />
         </Labeled>
         <button className="btn" type="submit" disabled={busy || !(Number(amount) > 0)}>
           {busy ? 'Adding…' : 'Add cash'}

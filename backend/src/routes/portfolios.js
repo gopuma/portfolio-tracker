@@ -3,6 +3,7 @@ import { query } from '../db.js';
 import { ensureTrackedInstrument } from '../services/instrumentService.js';
 import { fetchQuotes } from '../services/priceFetcher.js';
 import { TRADING_DAYS, riskStats, toReturns, pearsonMaps } from '../services/stats.js';
+import { loadTransactions, transactionsToEvents, rederivePortfolioHoldings } from '../services/ledgerService.js';
 
 export const portfoliosRouter = express.Router();
 
@@ -348,18 +349,22 @@ async function recordHistory(portfolioId, { holding_id, symbol, account, shares,
   );
 }
 
-// The full holding-change log for a portfolio, joined to instruments for pricing.
+// Composition change-log for the value chart, derived from the transaction ledger:
+// each security trade becomes a `set` (cumulative shares as of its trade_date). Cash is
+// skipped (the chart is securities-only). Correctly dated by each trade's real trade_date.
 async function loadHistory(portfolioId) {
-  return query(
-    `SELECT hh.id, hh.holding_id, hh.symbol, hh.account, hh.shares, hh.currency, hh.action,
-            DATE_FORMAT(hh.effective_date, '%Y-%m-%d') AS effective_date,
-            i.id AS instrument_id, i.display_name AS name
-       FROM holding_history hh
-       LEFT JOIN instruments i ON i.symbol = hh.symbol COLLATE utf8mb4_unicode_ci
-      WHERE hh.portfolio_id = ?
-      ORDER BY hh.effective_date ASC, hh.id ASC`,
-    [portfolioId]
+  const txns = await loadTransactions(portfolioId);
+  const secTxns = txns.filter(t => t.side === 'buy' || t.side === 'sell');
+  if (secTxns.length === 0) return [];
+  const symbols = [...new Set(secTxns.map(t => t.symbol))];
+  const placeholders = symbols.map(() => '?').join(',');
+  const instRows = await query(
+    `SELECT symbol, id, display_name FROM instruments WHERE symbol IN (${placeholders})`,
+    symbols
   );
+  const instIdBySymbol = Object.fromEntries(instRows.map(r => [r.symbol, r.id]));
+  const nameBySymbol = Object.fromEntries(instRows.map(r => [r.symbol, r.display_name]));
+  return transactionsToEvents(secTxns, nameBySymbol, instIdBySymbol);
 }
 
 /** List all portfolios with rolled-up returns. */
@@ -543,6 +548,42 @@ portfoliosRouter.delete('/:id', async (req, res, next) => {
  * price defaults to the latest close; the ticker is auto-tracked & backfilled if new.
  * The change is logged (effective today) so the value history tracks it month over month.
  */
+// --- Transaction-ledger helpers ------------------------------------------------
+async function addTransaction(pid, { symbol, account, side, shares, price, currency, trade_date }) {
+  const r = await query(
+    `INSERT INTO transactions (portfolio_id, symbol, account, side, shares, price, currency, trade_date)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [pid, symbol, account || '', side, shares, price ?? 1, currency || 'USD', trade_date]
+  );
+  return r.insertId;
+}
+
+async function latestClose(symbol) {
+  const rows = await query(
+    `SELECT lp.close_px c FROM instruments i JOIN v_latest_prices lp ON lp.instrument_id = i.id WHERE i.symbol = ?`,
+    [symbol]
+  );
+  return rows[0] ? Number(rows[0].close_px) : null;
+}
+
+// Re-derive the holdings cache after a ledger write. Rolls back `newTxId` if it oversells a
+// security (net shares < 0), and returns negative-cash (margin) messages as warnings.
+async function rederiveAndCheck(pid, newTxId) {
+  const { holdings, cashLots } = await rederivePortfolioHoldings(pid);
+  const neg = holdings.find(h => h.shares < -1e-9);
+  if (neg) {
+    if (newTxId) { await query(`DELETE FROM transactions WHERE id = ?`, [newTxId]); await rederivePortfolioHoldings(pid); }
+    return { error: `That would oversell ${neg.symbol} — you can't hold negative shares.` };
+  }
+  const warnings = cashLots.filter(c => c.shares < -1e-9).map(c =>
+    `Cash ${c.symbol.slice(5)}${c.account ? ` (${c.account})` : ''} is negative (margin): ${Math.round(c.shares).toLocaleString()}`);
+  return { warnings };
+}
+
+/**
+ * Add a holding = record a BUY in the ledger (accumulates). Body: { symbol, shares, price?,
+ * account?, trade_date? }. Holdings/chart/cash derive from the ledger.
+ */
 portfoliosRouter.post('/:id/holdings', async (req, res, next) => {
   try {
     const pid = req.params.id;
@@ -551,55 +592,36 @@ portfoliosRouter.post('/:id/holdings', async (req, res, next) => {
 
     const shares = Number(req.body?.shares);
     if (!Number.isFinite(shares) || shares <= 0) return res.status(400).json({ error: 'shares must be a positive number' });
-
-    // Optional account label — lets the same ticker be held more than once per
-    // portfolio (one lot per account). Same symbol + same account = edit.
     const account = (req.body?.account || '').trim().slice(0, 64);
 
-    let inst, latestClose;
+    let inst, latestCloseVal;
     try {
       const r = await ensureTrackedInstrument(req.body?.symbol);
-      inst = r.instrument; latestClose = r.latest_close;
+      inst = r.instrument; latestCloseVal = r.latest_close;
     } catch (e) {
       return res.status(e.status || 500).json({ error: e.message });
     }
 
-    // Capacity check (existing symbol+account = edit, allowed even at the cap).
-    const existing = await query(`SELECT id FROM portfolio_holdings WHERE portfolio_id = ? AND symbol = ? AND account = ?`, [pid, inst.symbol, account]);
+    // Capacity check only when introducing a NEW distinct security lot.
+    const existing = await query(`SELECT 1 FROM portfolio_holdings WHERE portfolio_id = ? AND symbol = ? AND account = ?`, [pid, inst.symbol, account]);
     if (existing.length === 0) {
-      // Cash equivalents don't count toward the securities cap.
       const [{ n }] = await query(`SELECT COUNT(*) AS n FROM portfolio_holdings WHERE portfolio_id = ? AND symbol NOT LIKE 'CASH:%'`, [pid]);
       if (Number(n) >= MAX_HOLDINGS) return res.status(400).json({ error: `Portfolio is full (max ${MAX_HOLDINGS} holdings)` });
     }
 
     const priceInput = req.body?.price != null && req.body.price !== '' ? Number(req.body.price) : null;
-    const price = priceInput != null && priceInput > 0 ? priceInput : latestClose;
+    const price = priceInput != null && priceInput > 0 ? priceInput : latestCloseVal;
     if (price == null || !(price > 0)) return res.status(400).json({ error: 'No price available — provide a custom price' });
 
-    await query(
-      `INSERT INTO portfolio_holdings (portfolio_id, symbol, account, shares, cost_price, currency)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE shares = VALUES(shares), cost_price = VALUES(cost_price), currency = VALUES(currency)`,
-      [pid, inst.symbol, account, shares, price, inst.currency]
-    );
+    const trade_date = String(req.body?.trade_date || dateOf(new Date())).slice(0, 10);
+    const txId = await addTransaction(pid, { symbol: inst.symbol, account, side: 'buy', shares, price, currency: inst.currency, trade_date });
+    const chk = await rederiveAndCheck(pid, txId);
 
-    // Log the resulting lot (its id is stable across edits via the unique key).
-    const [row] = await query(
-      `SELECT id FROM portfolio_holdings WHERE portfolio_id = ? AND symbol = ? AND account = ?`,
-      [pid, inst.symbol, account]
-    );
-    await recordHistory(pid, { holding_id: row?.id, symbol: inst.symbol, account, shares, currency: inst.currency, action: 'set' });
-
-    res.status(201).json({ symbol: inst.symbol, account, shares, cost_price: price, currency: inst.currency, latest_close: latestClose });
+    res.status(201).json({ symbol: inst.symbol, account, shares, cost_price: price, currency: inst.currency, latest_close: latestCloseVal, warnings: chk.warnings || [] });
   } catch (e) { next(e); }
 });
 
-/**
- * Add / update a cash equivalent. Body: { currency:'USD'|'KRW', amount, account? }
- * Stored as a holding with the reserved symbol CASH:<CCY> (shares = amount, cost 1),
- * so it flows through valuation, weights, and the value-history chart like any lot.
- * Same currency + same account = edit. Edit the amount later via PATCH /holdings (shares).
- */
+/** Add cash = record a DEPOSIT. Body: { currency:'USD'|'KRW', amount, account?, trade_date? } */
 portfoliosRouter.post('/:id/cash', async (req, res, next) => {
   try {
     const pid = req.params.id;
@@ -608,83 +630,128 @@ portfoliosRouter.post('/:id/cash', async (req, res, next) => {
 
     const currency = String(req.body?.currency || '').toUpperCase();
     if (!CASH_CURRENCIES.includes(currency)) return res.status(400).json({ error: `currency must be one of ${CASH_CURRENCIES.join(', ')}` });
-
     const amount = Number(req.body?.amount);
     if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: 'amount must be a positive number' });
-
     const account = (req.body?.account || '').trim().slice(0, 64);
-    const symbol = cashSymbol(currency);
+    const trade_date = String(req.body?.trade_date || dateOf(new Date())).slice(0, 10);
 
-    await query(
-      `INSERT INTO portfolio_holdings (portfolio_id, symbol, account, shares, cost_price, currency)
-       VALUES (?, ?, ?, ?, 1, ?)
-       ON DUPLICATE KEY UPDATE shares = VALUES(shares), currency = VALUES(currency)`,
-      [pid, symbol, account, amount, currency]
-    );
-
-    const [row] = await query(
-      `SELECT id FROM portfolio_holdings WHERE portfolio_id = ? AND symbol = ? AND account = ?`,
-      [pid, symbol, account]
-    );
-    await recordHistory(pid, { holding_id: row?.id, symbol, account, shares: amount, currency, action: 'set' });
-
-    res.status(201).json({ symbol, currency, account, amount });
+    await addTransaction(pid, { symbol: cashSymbol(currency), account, side: 'deposit', shares: amount, price: 1, currency, trade_date });
+    await rederivePortfolioHoldings(pid);
+    res.status(201).json({ symbol: cashSymbol(currency), currency, account, amount });
   } catch (e) { next(e); }
 });
 
-/** Update a holding's shares, cost price, and/or account. Body: { shares?, cost_price?, account? } */
+/**
+ * Adjust a holding's quantity by recording the matching trade (buy/sell for securities,
+ * deposit/withdraw for cash) to reach the target `shares`. Body: { shares }. Cost basis and
+ * account are ledger-derived and not editable here — use transactions for those.
+ */
 portfoliosRouter.patch('/:id/holdings/:holdingId', async (req, res, next) => {
   try {
-    const sets = [];
-    const params = [];
-    const { shares, cost_price, account } = req.body || {};
-    if (shares !== undefined) {
-      const n = Number(shares);
-      if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ error: 'shares must be a positive number' });
-      sets.push('shares = ?'); params.push(n);
+    const pid = req.params.id;
+    if (req.body?.shares === undefined) {
+      return res.status(400).json({ error: 'Only quantity can be adjusted here; cost basis and account are managed via transactions.' });
     }
-    if (cost_price !== undefined && cost_price !== '') {
-      const c = Number(cost_price);
-      if (!Number.isFinite(c) || c <= 0) return res.status(400).json({ error: 'cost_price must be a positive number' });
-      sets.push('cost_price = ?'); params.push(c);
-    }
-    if (account !== undefined) {
-      // Account may be blank (clears the label); keyed by (portfolio_id, symbol, account).
-      sets.push('account = ?'); params.push(String(account).trim().slice(0, 64));
-    }
-    if (sets.length === 0) return res.status(400).json({ error: 'nothing to update' });
-    params.push(req.params.holdingId, req.params.id);
-    let r;
-    try {
-      r = await query(`UPDATE portfolio_holdings SET ${sets.join(', ')} WHERE id = ? AND portfolio_id = ?`, params);
-    } catch (e) {
-      // Renaming the account onto a symbol+account that already exists in this portfolio.
-      if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'This ticker is already held under that account — change the account or merge the lots.' });
-      throw e;
-    }
-    if (r.affectedRows === 0) return res.status(404).json({ error: 'Holding not found' });
+    const target = Number(req.body.shares);
+    if (!Number.isFinite(target) || target < 0) return res.status(400).json({ error: 'shares must be a non-negative number' });
 
-    // Log the lot's resulting state so the value history reflects the change this month.
-    const [row] = await query(
-      `SELECT symbol, account, shares, currency FROM portfolio_holdings WHERE id = ? AND portfolio_id = ?`,
-      [req.params.holdingId, req.params.id]
-    );
-    if (row) await recordHistory(req.params.id, { holding_id: Number(req.params.holdingId), symbol: row.symbol, account: row.account, shares: row.shares, currency: row.currency, action: 'set' });
+    const [row] = await query(`SELECT symbol, account, shares, currency, cost_price FROM portfolio_holdings WHERE id = ? AND portfolio_id = ?`, [req.params.holdingId, pid]);
+    if (!row) return res.status(404).json({ error: 'Holding not found' });
 
-    res.json({ updated: 1 });
+    const delta = target - Number(row.shares);
+    if (Math.abs(delta) < 1e-9) return res.json({ updated: 1 });
+    const trade_date = dateOf(new Date());
+
+    if (isCash(row.symbol)) {
+      await addTransaction(pid, { symbol: row.symbol, account: row.account, side: delta > 0 ? 'deposit' : 'withdraw', shares: Math.abs(delta), price: 1, currency: row.currency, trade_date });
+      await rederivePortfolioHoldings(pid);
+      return res.json({ updated: 1 });
+    }
+    const price = (await latestClose(row.symbol)) || Number(row.cost_price) || 1;
+    const txId = await addTransaction(pid, { symbol: row.symbol, account: row.account, side: delta > 0 ? 'buy' : 'sell', shares: Math.abs(delta), price, currency: row.currency, trade_date });
+    const chk = await rederiveAndCheck(pid, txId);
+    if (chk.error) return res.status(400).json({ error: chk.error });
+    res.json({ updated: 1, warnings: chk.warnings || [] });
   } catch (e) { next(e); }
 });
 
-/** Remove a holding from a portfolio. Logs a 'delete' so the value history stops counting it. */
+/** Remove a holding = record a full SELL (or WITHDRAW for cash) in the ledger. */
 portfoliosRouter.delete('/:id/holdings/:holdingId', async (req, res, next) => {
   try {
-    const [row] = await query(
-      `SELECT symbol, account, shares, currency FROM portfolio_holdings WHERE id = ? AND portfolio_id = ?`,
-      [req.params.holdingId, req.params.id]
+    const pid = req.params.id;
+    const [row] = await query(`SELECT symbol, account, shares, currency, cost_price FROM portfolio_holdings WHERE id = ? AND portfolio_id = ?`, [req.params.holdingId, pid]);
+    if (!row) return res.status(404).json({ error: 'Holding not found' });
+    const trade_date = dateOf(new Date());
+    if (isCash(row.symbol)) {
+      await addTransaction(pid, { symbol: row.symbol, account: row.account, side: 'withdraw', shares: Number(row.shares), price: 1, currency: row.currency, trade_date });
+    } else {
+      const price = (await latestClose(row.symbol)) || Number(row.cost_price) || 1;
+      await addTransaction(pid, { symbol: row.symbol, account: row.account, side: 'sell', shares: Number(row.shares), price, currency: row.currency, trade_date });
+    }
+    await rederivePortfolioHoldings(pid);
+    res.json({ deleted: 1 });
+  } catch (e) { next(e); }
+});
+
+/** List a portfolio's transactions (newest first). */
+portfoliosRouter.get('/:id/transactions', async (req, res, next) => {
+  try {
+    const rows = await query(
+      `SELECT id, symbol, account, side, shares, price, currency,
+              DATE_FORMAT(trade_date, '%Y-%m-%d') AS trade_date
+         FROM transactions WHERE portfolio_id = ? ORDER BY trade_date DESC, id DESC`,
+      [req.params.id]
     );
-    const r = await query(`DELETE FROM portfolio_holdings WHERE id = ? AND portfolio_id = ?`, [req.params.holdingId, req.params.id]);
-    if (r.affectedRows === 0) return res.status(404).json({ error: 'Holding not found' });
-    if (row) await recordHistory(req.params.id, { holding_id: Number(req.params.holdingId), symbol: row.symbol, account: row.account, shares: 0, currency: row.currency, action: 'delete' });
+    res.json({ count: rows.length, transactions: rows });
+  } catch (e) { next(e); }
+});
+
+/**
+ * Record a transaction. Body: { side:'buy'|'sell'|'deposit'|'withdraw', symbol?, account?,
+ * shares, price?, currency?, trade_date? }. Securities auto-track; a sell can't oversell;
+ * buys/sells move cash (may go negative — returned as a warning).
+ */
+portfoliosRouter.post('/:id/transactions', async (req, res, next) => {
+  try {
+    const pid = req.params.id;
+    const pf = await query(`SELECT id FROM portfolios WHERE id = ?`, [pid]);
+    if (pf.length === 0) return res.status(404).json({ error: 'Portfolio not found' });
+
+    const side = String(req.body?.side || '');
+    if (!['buy', 'sell', 'deposit', 'withdraw'].includes(side)) return res.status(400).json({ error: 'side must be buy, sell, deposit, or withdraw' });
+    const shares = Number(req.body?.shares);
+    if (!Number.isFinite(shares) || shares <= 0) return res.status(400).json({ error: 'shares/amount must be positive' });
+    const account = (req.body?.account || '').trim().slice(0, 64);
+    const trade_date = String(req.body?.trade_date || dateOf(new Date())).slice(0, 10);
+
+    let symbol, currency, price;
+    if (side === 'deposit' || side === 'withdraw') {
+      currency = String(req.body?.currency || '').toUpperCase();
+      if (!CASH_CURRENCIES.includes(currency)) return res.status(400).json({ error: `currency must be one of ${CASH_CURRENCIES.join(', ')}` });
+      symbol = cashSymbol(currency); price = 1;
+    } else {
+      let inst;
+      try { inst = (await ensureTrackedInstrument(req.body?.symbol)).instrument; }
+      catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
+      symbol = inst.symbol; currency = inst.currency;
+      const p = req.body?.price != null && req.body.price !== '' ? Number(req.body.price) : (await latestClose(symbol));
+      if (!(p > 0)) return res.status(400).json({ error: 'price is required (no latest close available)' });
+      price = p;
+    }
+
+    const txId = await addTransaction(pid, { symbol, account, side, shares, price, currency, trade_date });
+    const chk = await rederiveAndCheck(pid, txId);
+    if (chk.error) return res.status(400).json({ error: chk.error });
+    res.status(201).json({ id: txId, side, symbol, account, shares, price, currency, trade_date, warnings: chk.warnings || [] });
+  } catch (e) { next(e); }
+});
+
+/** Delete a transaction and re-derive holdings/chart/cash. */
+portfoliosRouter.delete('/:id/transactions/:txId', async (req, res, next) => {
+  try {
+    const r = await query(`DELETE FROM transactions WHERE id = ? AND portfolio_id = ?`, [req.params.txId, req.params.id]);
+    if (r.affectedRows === 0) return res.status(404).json({ error: 'Transaction not found' });
+    await rederivePortfolioHoldings(req.params.id);
     res.json({ deleted: 1 });
   } catch (e) { next(e); }
 });
