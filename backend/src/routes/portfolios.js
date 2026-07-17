@@ -417,7 +417,9 @@ portfoliosRouter.get('/:id/value-history', async (req, res, next) => {
   try {
     const pf = await query(`SELECT id, base_currency FROM portfolios WHERE id = ?`, [req.params.id]);
     if (pf.length === 0) return res.status(404).json({ error: 'Portfolio not found' });
-    const base = pf[0].base_currency;
+    // Display currency: default to the portfolio's base, overridable via ?currency=USD|KRW.
+    // Conversion uses each day's FX rate (loaded below), so it's historically accurate.
+    const base = ['USD', 'KRW'].includes(req.query.currency) ? req.query.currency : pf[0].base_currency;
     const granularity = req.query.granularity === 'daily' ? 'daily' : 'monthly';
 
     const events = await loadHistory(req.params.id);
@@ -444,6 +446,14 @@ portfoliosRouter.get('/:id/value-history', async (req, res, next) => {
         ORDER BY p.trade_date ASC`,
       [minDate]
     );
+    // Live rate for the LATEST bar only: override (or fill in) the FX on the most recent
+    // trading day with the live KRW/USD quote, so the current bar reflects today's rate
+    // even before that day's FX close is stored. Historical bars keep each day's own rate.
+    const liveKrwPerUsd = await getKrwPerUsd();
+    if (liveKrwPerUsd && priceRows.length > 0) {
+      const latestPriceDate = priceRows.reduce((m, r) => (r.date > m ? r.date : m), priceRows[0].date);
+      fxRows.push({ date: latestPriceDate, fx: liveKrwPerUsd }); // appended → wins in fxByDate
+    }
 
     const { symbols, points } = granularity === 'daily'
       ? dailyValues(events, priceRows, fxRows, base)
@@ -743,6 +753,58 @@ portfoliosRouter.post('/:id/transactions', async (req, res, next) => {
     const chk = await rederiveAndCheck(pid, txId);
     if (chk.error) return res.status(400).json({ error: chk.error });
     res.status(201).json({ id: txId, side, symbol, account, shares, price, currency, trade_date, warnings: chk.warnings || [] });
+  } catch (e) { next(e); }
+});
+
+/**
+ * Edit a transaction's price, shares/amount, and/or trade_date, then re-derive holdings/
+ * chart/cash (this is how the average cost basis gets adjusted). Cash rows keep price = 1.
+ * If a shares change would oversell a security, the edit is rolled back.
+ */
+portfoliosRouter.patch('/:id/transactions/:txId', async (req, res, next) => {
+  try {
+    const pid = req.params.id;
+    const [row] = await query(
+      `SELECT id, symbol, side, shares, price, DATE_FORMAT(trade_date,'%Y-%m-%d') AS trade_date
+         FROM transactions WHERE id = ? AND portfolio_id = ?`,
+      [req.params.txId, pid]
+    );
+    if (!row) return res.status(404).json({ error: 'Transaction not found' });
+    const isCashTx = row.side === 'deposit' || row.side === 'withdraw';
+
+    const fields = {};
+    if (req.body?.shares != null && req.body.shares !== '') {
+      const s = Number(req.body.shares);
+      if (!Number.isFinite(s) || s <= 0) return res.status(400).json({ error: 'shares/amount must be positive' });
+      fields.shares = s;
+    }
+    if (req.body?.trade_date) fields.trade_date = String(req.body.trade_date).slice(0, 10);
+    if (req.body?.price != null && req.body.price !== '') {
+      if (isCashTx) return res.status(400).json({ error: 'Cash transactions have no price (always 1).' });
+      const p = Number(req.body.price);
+      if (!(p > 0)) return res.status(400).json({ error: 'price must be positive' });
+      fields.price = p;
+    }
+    const keys = Object.keys(fields);
+    if (keys.length === 0) return res.status(400).json({ error: 'Nothing to update (price, shares, or trade_date).' });
+
+    await query(
+      `UPDATE transactions SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ? AND portfolio_id = ?`,
+      [...keys.map(k => fields[k]), req.params.txId, pid]
+    );
+
+    const { holdings, cashLots } = await rederivePortfolioHoldings(pid);
+    const neg = holdings.find(h => h.shares < -1e-9);
+    if (neg) {
+      // Roll the edit back to the original values and re-derive.
+      await query(`UPDATE transactions SET shares = ?, price = ?, trade_date = ? WHERE id = ?`,
+        [row.shares, row.price, row.trade_date, row.id]);
+      await rederivePortfolioHoldings(pid);
+      return res.status(400).json({ error: `That would oversell ${neg.symbol} — you can't hold negative shares.` });
+    }
+    const warnings = cashLots.filter(c => c.shares < -1e-9).map(c =>
+      `Cash ${c.symbol.slice(5)}${c.account ? ` (${c.account})` : ''} is negative (margin): ${Math.round(c.shares).toLocaleString()}`);
+    res.json({ id: Number(req.params.txId), ...fields, warnings });
   } catch (e) { next(e); }
 });
 

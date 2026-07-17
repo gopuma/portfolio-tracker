@@ -74,7 +74,12 @@ export const api = {
   lookup:        (symbol)                => get(`/instruments/lookup?symbol=${encodeURIComponent(symbol)}`),
   portfolios:    ()                      => get(`/portfolios`),
   portfolioById: (id)                    => get(`/portfolios/${id}`),
-  portfolioValueHistory: (id, granularity) => get(`/portfolios/${id}/value-history${granularity === 'daily' ? '?granularity=daily' : ''}`),
+  portfolioValueHistory: (id, granularity, currency) => {
+    const qs = [];
+    if (granularity === 'daily') qs.push('granularity=daily');
+    if (currency) qs.push(`currency=${encodeURIComponent(currency)}`);
+    return get(`/portfolios/${id}/value-history${qs.length ? `?${qs.join('&')}` : ''}`);
+  },
   portfolioAnalytics: (id, days = 365, rf = 0) => get(`/portfolios/${id}/analytics?days=${days}&rf=${rf}`),
   createPortfolio: (body)                => postJson(`/portfolios`, body),
   renamePortfolio: (id, name)            => patchJson(`/portfolios/${id}`, { name }),
@@ -85,6 +90,7 @@ export const api = {
   removeHolding: (id, holdingId)         => del(`/portfolios/${id}/holdings/${holdingId}`),
   transactions:  (id)                    => get(`/portfolios/${id}/transactions`),
   addTransaction: (id, body)             => postJson(`/portfolios/${id}/transactions`, body),
+  updateTransaction: (id, txId, body)    => patchJson(`/portfolios/${id}/transactions/${txId}`, body),
   deleteTransaction: (id, txId)          => del(`/portfolios/${id}/transactions/${txId}`),
 
   // Prediction competition

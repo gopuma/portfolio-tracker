@@ -39,11 +39,20 @@ export default function TransactionsPanel({ portfolioId, baseCurrency, onChanged
   const load = () => api.transactions(portfolioId).then(d => setTxns(d.transactions || [])).catch(e => setErr(e.message));
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [portfolioId]);
 
+  const [editing, setEditing] = useState(null); // { id, value } — inline price edit
+
   const afterWrite = () => { load(); onChanged?.(); };
   const remove = async (t) => {
     if (!window.confirm(`Delete this ${t.side} of ${isCash(t.symbol) ? cashCcy(t.symbol) : t.symbol}? Holdings and the chart will re-derive.`)) return;
     try { await api.deleteTransaction(portfolioId, t.id); afterWrite(); }
     catch (e) { window.alert(`Delete failed: ${e.message}`); }
+  };
+  const savePrice = async (t) => {
+    const price = Number(editing?.value);
+    setEditing(null);
+    if (!(price > 0) || price === Number(t.price)) return; // no-op or invalid
+    try { await api.updateTransaction(portfolioId, t.id, { price }); afterWrite(); }
+    catch (e) { window.alert(`Update failed: ${e.message}`); }
   };
 
   return (
@@ -90,7 +99,26 @@ export default function TransactionsPanel({ portfolioId, baseCurrency, onChanged
                     <td>{cash ? `💵 ${cashCcy(t.symbol)}` : t.symbol}</td>
                     <td style={{ fontSize: 12, color: 'var(--text-dim)' }}>{t.account || '—'}</td>
                     <td className="num">{cash ? fmtMoney(t.shares, t.currency) : fmtNum(t.shares, 0)}</td>
-                    <td className="num">{cash ? '—' : fmtNum(t.price)}</td>
+                    <td className="num">
+                      {cash ? '—' : editing?.id === t.id ? (
+                        <input
+                          autoFocus
+                          type="number"
+                          step="any"
+                          value={editing.value}
+                          onChange={e => setEditing({ id: t.id, value: e.target.value })}
+                          onBlur={() => savePrice(t)}
+                          onKeyDown={e => { if (e.key === 'Enter') savePrice(t); if (e.key === 'Escape') setEditing(null); }}
+                          style={{ width: 90, textAlign: 'right' }}
+                        />
+                      ) : (
+                        <span
+                          onClick={() => setEditing({ id: t.id, value: String(t.price) })}
+                          style={{ cursor: 'pointer', borderBottom: '1px dashed var(--text-dim)' }}
+                          title="Click to edit price"
+                        >{fmtNum(t.price)}</span>
+                      )}
+                    </td>
                     <td className="num">{fmtMoney(value, t.currency)}</td>
                     <td className="num"><button className="btn ghost" style={{ color: 'var(--red)', borderColor: 'var(--red)', padding: '2px 8px' }} onClick={() => remove(t)}>✕</button></td>
                   </tr>

@@ -69,6 +69,51 @@ const inputStyle = {
   fontVariantNumeric: 'tabular-nums',
 };
 
+// Single sliding toggle between USD and KRW. The knob slides to the active side and the
+// active label brightens. Clicking anywhere flips it.
+function CurrencyToggle({ value, onChange }) {
+  const isKrw = value === 'KRW';
+  return (
+    <div
+      role="switch"
+      aria-checked={isKrw}
+      aria-label="Display currency"
+      title="Slide to switch chart currency (USD ⟷ KRW)"
+      onClick={() => onChange(isKrw ? 'USD' : 'KRW')}
+      style={{
+        position: 'relative', display: 'inline-flex', alignItems: 'center',
+        width: 100, height: 28, borderRadius: 14, cursor: 'pointer', userSelect: 'none',
+        background: 'var(--panel-2)', border: '1px solid var(--border)',
+        marginRight: 4, flexShrink: 0,
+      }}
+    >
+      {/* Sliding knob under the active label. */}
+      <span
+        style={{
+          position: 'absolute', top: 2, left: isKrw ? 50 : 2, width: 48, height: 24,
+          borderRadius: 12, background: 'var(--accent, #4a9eff)',
+          transition: 'left 160ms ease',
+        }}
+      />
+      {['USD', 'KRW'].map(c => {
+        const on = value === c;
+        return (
+          <span
+            key={c}
+            style={{
+              position: 'relative', zIndex: 1, flex: 1, textAlign: 'center',
+              fontSize: 12, fontWeight: on ? 700 : 500,
+              color: on ? '#fff' : 'var(--text-dim)',
+            }}
+          >
+            {c}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 // Tooltip: per-stock breakdown for the hovered period, plus total and period-over-period
 // change. `hoverKey` bolds the actively-hovered stock's row. `daily` switches the label.
 function ChartTooltip({ active, payload, ccy, symbols, hoverKey, daily }) {
@@ -148,6 +193,9 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
   // 'monthly' = each bar is the month's average; 'daily' = each bar is a day's close.
   const [granularity, setGranularity] = useState('monthly');
   const daily = granularity === 'daily';
+  // Display currency for the chart. Defaults to the portfolio's base; the backend
+  // re-denominates using each day's FX rate (historically accurate).
+  const [displayCcy, setDisplayCcy] = useState(base || 'USD');
 
   const applyDraft = () => {
     const n = Math.round(Number(draft));
@@ -160,12 +208,12 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
     setLoading(true);
     setErr(null);
     setHoverKey(null);
-    api.portfolioValueHistory(portfolioId, granularity)
+    api.portfolioValueHistory(portfolioId, granularity, displayCcy)
       .then(d => { if (!cancelled) setResp(d); })
       .catch(e => { if (!cancelled) setErr(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [portfolioId, reloadKey, granularity]);
+  }, [portfolioId, reloadKey, granularity, displayCcy]);
 
   const ccy = resp?.base_currency || base;
   const symbols = resp?.symbols || [];
@@ -194,6 +242,9 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <h2 style={{ margin: '0 0 4px' }}>{daily ? 'Daily Close Trend' : 'Monthly Average Asset Value'}</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {/* Display-currency slide toggle. Re-denominates every bar (backend converts with
+              each day's FX rate); KRW cash — when shown — is added at face value, not reconverted. */}
+          <CurrencyToggle value={displayCcy} onChange={setDisplayCcy} />
           {PRESETS.map(p => (
             <button
               key={p.label}
@@ -219,7 +270,7 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
             onClick={() => setGranularity(g => (g === 'daily' ? 'monthly' : 'daily'))}
             title={daily ? 'Switch to the monthly-average view' : 'Switch to the daily-close view'}
           >
-            {daily ? 'Monthly view' : 'Daily view'}
+            {daily ? 'Monthly' : 'Daily'}
           </button>
         </div>
       </div>
