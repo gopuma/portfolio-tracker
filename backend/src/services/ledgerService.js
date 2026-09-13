@@ -114,29 +114,36 @@ export async function rederivePortfolioHoldings(portfolioId) {
 
 /**
  * Convert a portfolio's transactions into the change-log "events" the value chart consumes
- * (see walkDailyValues): one `set` per security trade with the lot's CUMULATIVE shares as of
- * its trade_date (`delete` when it reaches 0). Cash sides are skipped — the chart is
- * securities-only. Each distinct (symbol, account) gets a stable synthetic lot id.
+ * (see walkDailyValues): one `set` per trade with the lot's CUMULATIVE shares as of its
+ * trade_date (`delete` when it reaches 0). Each distinct (symbol, account) gets a stable
+ * synthetic lot id.
+ *
+ * Cash sides are skipped unless `includeCash` — the chart is securities-only by default, so
+ * an idle cash band doesn't dominate the trend. Included, a deposit/withdraw becomes a
+ * running balance on the reserved `CASH:<CCY>` symbol, which the walk values at face (1)
+ * in its own currency and converts like any other cross-currency lot.
  */
-export function transactionsToEvents(txns, nameBySymbol = {}, instrumentIdBySymbol = {}) {
+export function transactionsToEvents(txns, nameBySymbol = {}, instrumentIdBySymbol = {}, includeCash = false) {
   const lotId = new Map();
   const cum = new Map(); // lotKey -> running shares
   const events = [];
   for (const t of txns) {
-    if (isCashSide(t.side)) continue;
+    const cash = isCashSide(t.side);
+    if (cash && !includeCash) continue;
     const key = `${t.symbol}|${t.account || ''}`;
     if (!lotId.has(key)) lotId.set(key, lotId.size + 1);
     const prev = cum.get(key) || 0;
-    const next = prev + (t.side === 'buy' ? 1 : -1) * Number(t.shares);
+    const sign = (t.side === 'buy' || t.side === 'deposit') ? 1 : -1;
+    const next = prev + sign * Number(t.shares);
     cum.set(key, next);
     events.push({
       id: t.id,
       holding_id: lotId.get(key),
       symbol: t.symbol,
-      instrument_id: instrumentIdBySymbol[t.symbol] ?? null,
+      instrument_id: cash ? null : (instrumentIdBySymbol[t.symbol] ?? null),
       currency: t.currency,
       shares: next,
-      name: nameBySymbol[t.symbol] || null,
+      name: cash ? null : (nameBySymbol[t.symbol] || null),
       action: Math.abs(next) < EPS ? 'delete' : 'set',
       effective_date: t.trade_date,
     });

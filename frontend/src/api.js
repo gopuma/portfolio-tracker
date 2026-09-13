@@ -68,16 +68,21 @@ export const api = {
   optimize:     (symbols, days = 365, rf = 0) => postJson(`/analytics/optimize`, { symbols, days, rf }),
   audit:        (live = false)           => get(`/audit${live ? '?live=1' : ''}`),
   research:     (symbol, currency = 'native') => get(`/research/${encodeURIComponent(symbol)}?currency=${encodeURIComponent(currency)}`),
+  ratios:       (symbol)                 => get(`/research/${encodeURIComponent(symbol)}/ratios`),
 
   // Portfolios
   searchSymbols: (q, market)             => get(`/instruments/search?q=${encodeURIComponent(q)}${market ? `&market=${encodeURIComponent(market)}` : ''}`),
   lookup:        (symbol)                => get(`/instruments/lookup?symbol=${encodeURIComponent(symbol)}`),
   portfolios:    ()                      => get(`/portfolios`),
   portfolioById: (id)                    => get(`/portfolios/${id}`),
-  portfolioValueHistory: (id, granularity, currency) => {
+  // backfillFrom ('YYYY-MM-DD') prepends hypothetical periods from that date to the first
+  // recorded trade, holding the opening position constant. Read-only: nothing is stored.
+  portfolioValueHistory: (id, granularity, currency, backfillFrom, includeCash) => {
     const qs = [];
     if (granularity === 'daily') qs.push('granularity=daily');
     if (currency) qs.push(`currency=${encodeURIComponent(currency)}`);
+    if (backfillFrom) qs.push(`backfill_from=${encodeURIComponent(backfillFrom)}`);
+    if (includeCash) qs.push('include_cash=1');
     return get(`/portfolios/${id}/value-history${qs.length ? `?${qs.join('&')}` : ''}`);
   },
   portfolioAnalytics: (id, days = 365, rf = 0) => get(`/portfolios/${id}/analytics?days=${days}&rf=${rf}`),

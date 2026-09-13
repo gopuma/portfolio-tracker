@@ -70,7 +70,8 @@ export default function PortfolioAnalytics({ portfolioId, nameBySym = {}, reload
     <div className="panel">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <h2 style={{ margin: 0 }}>Portfolio Analytics</h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {/* Stays right-aligned when the row wraps under the heading. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginLeft: 'auto', justifyContent: 'flex-end' }}>
           {PRESETS.map(p => (
             <button key={p.label} className={`btn ${days === p.days ? '' : 'ghost'}`} onClick={() => { setDays(p.days); setDraft(String(p.days)); }}>{p.label}</button>
           ))}

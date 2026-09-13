@@ -103,3 +103,49 @@ test('cash converts to base currency at the given FX', () => {
   assert.equal(holdings[0].market_value_base, 130000);
   assert.equal(totals.market_value, 130000);
 });
+
+// --- JPY -------------------------------------------------------------------
+// Conversions pivot through KRW, so every pair falls out of the two rates we track:
+// krwPerUsd (KRW=X) and krwPerJpy (JPYKRW=X).
+const FX = { krwPerUsd: 1300, krwPerJpy: 8.5 };
+
+test('JPY cash converts to a KRW base', () => {
+  const rows = [cashRow({ id: 1, amount: 10000, currency: 'JPY' })];
+  const { holdings } = computePortfolio(rows, 'KRW', FX);
+  assert.equal(holdings[0].market_value_base, 85000); // 10,000 × 8.5
+});
+
+test('JPY cash converts to a USD base (via KRW)', () => {
+  const rows = [cashRow({ id: 1, amount: 13000, currency: 'JPY' })];
+  const { holdings } = computePortfolio(rows, 'USD', FX);
+  assert.equal(holdings[0].market_value_base, 13000 * 8.5 / 1300); // ≈ 85.0
+});
+
+test('USD cash converts to a JPY base (the reverse leg)', () => {
+  const rows = [cashRow({ id: 1, amount: 100, currency: 'USD' })];
+  const { holdings } = computePortfolio(rows, 'JPY', FX);
+  assert.equal(holdings[0].market_value_base, 100 * 1300 / 8.5);
+});
+
+test('JPY cash is left at face when the JPY rate is missing', () => {
+  // No krwPerJpy: better to count the balance at face than to drop it from the totals.
+  const rows = [cashRow({ id: 1, amount: 10000, currency: 'JPY' })];
+  const { holdings } = computePortfolio(rows, 'KRW', { krwPerUsd: 1300 });
+  assert.equal(holdings[0].market_value_base, 10000);
+});
+
+test('a bare number is still read as krwPerUsd (legacy callers)', () => {
+  const rows = [cashRow({ id: 1, amount: 100, currency: 'USD' })];
+  assert.equal(computePortfolio(rows, 'KRW', 1300).holdings[0].market_value_base, 130000);
+});
+
+test('USD, KRW and JPY cash roll up together in one base', () => {
+  const rows = [
+    cashRow({ id: 1, amount: 100, currency: 'USD' }),    // 130,000 KRW
+    cashRow({ id: 2, amount: 50000, currency: 'KRW' }),  //  50,000 KRW
+    cashRow({ id: 3, amount: 10000, currency: 'JPY' }),  //  85,000 KRW
+  ];
+  const { totals } = computePortfolio(rows, 'KRW', FX);
+  assert.equal(totals.market_value, 265000);
+  assert.equal(totals.cash_value, 265000);
+});

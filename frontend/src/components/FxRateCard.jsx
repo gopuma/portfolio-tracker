@@ -36,15 +36,23 @@ function AsOf({ date }) {
   return <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>Data as of {s}</span>;
 }
 
-// Period presets. The /prices endpoint caps history at 1825 days (5y).
+// Period presets. 'Max' asks for more history than any pair actually has, so the
+// series simply starts at its first available point (KRW=X begins 2003-12-01).
 const PRESETS = [
   { label: '6M', days: 180 },
   { label: '1Y', days: 365 },
   { label: '3Y', days: 1095 },
   { label: '5Y', days: 1825 },
+  { label: 'Max', days: 20000 },
 ];
 
-const MAX_DAYS = 1825;
+// Upper bound accepted by the custom-period input; matches MAX_PRICE_DAYS on the
+// /prices route, so anything the backend will serve is reachable from the UI.
+const MAX_DAYS = 20000;
+
+// Trailing windows for the three average stats. Kept separate from MAX_DAYS —
+// the 5y average must stay 5y even though we now fetch far more history than that.
+const AVG_WINDOWS = { y1: 365, y3: 1095, y5: 1825 };
 
 /**
  * FX rate card with chart, trailing averages, and a live overlay. Defaults to USD/KRW
@@ -59,6 +67,7 @@ export default function FxRateCard({
 }) {
   const [days, setDays] = useState(180); // default: last 6 months
   const [draft, setDraft] = useState('180'); // custom-period input buffer
+  const [draftNote, setDraftNote] = useState(null); // why a custom period was rejected/clamped
   const [data, setData] = useState(null);
   const [history, setHistory] = useState(null); // full 5y series, for the averages
   const [err, setErr] = useState(null);
@@ -91,7 +100,7 @@ export default function FxRateCard({
     return () => { cancelled = true; };
   }, [symbol, days]);
 
-  // Fetch the full 5y history once so the 1Y/3Y/5Y averages stay fixed
+  // Fetch the whole series once so the 1Y/3Y/5Y averages stay fixed
   // regardless of the chart's selected period.
   useEffect(() => {
     let cancelled = false;
@@ -119,7 +128,7 @@ export default function FxRateCard({
       if (sel.length === 0) return null;
       return sel.reduce((a, r) => a + r.v, 0) / sel.length;
     };
-    return { y1: avgOver(365), y3: avgOver(1095), y5: avgOver(MAX_DAYS) };
+    return { y1: avgOver(AVG_WINDOWS.y1), y3: avgOver(AVG_WINDOWS.y3), y5: avgOver(AVG_WINDOWS.y5) };
   }, [history]);
 
   const chartData = useMemo(
@@ -141,10 +150,24 @@ export default function FxRateCard({
   // Small rates (e.g. KRW/JPY ≈ 9.5) need decimals on the Y axis; large ones (KRW/USD ≈ 1500) don't.
   const yDigits = last != null && Math.abs(last) < 100 ? 2 : 0;
 
+  // Apply the custom period. Always reflects the accepted value back into the input and
+  // says why when it differs — silently ignoring bad or over-cap input made the button
+  // look broken (asking for more than MAX_DAYS while already at MAX_DAYS is a no-op
+  // state-wise, so nothing refetched and nothing explained itself).
   const applyDraft = () => {
     const n = Math.round(Number(draft));
-    if (!n || n < 1) return;
-    setDays(Math.min(n, MAX_DAYS));
+    if (!Number.isFinite(n) || n < 1) {
+      setDraftNote('Enter a whole number of days (1 or more).');
+      return;
+    }
+    const clamped = Math.min(n, MAX_DAYS);
+    setDraftNote(
+      clamped !== n
+        ? `Capped at ${clamped.toLocaleString()} days — the full history we hold.`
+        : null
+    );
+    setDays(clamped);
+    setDraft(String(clamped));
   };
 
   return (
@@ -192,7 +215,7 @@ export default function FxRateCard({
           <button
             key={p.label}
             className={`btn ${days === p.days ? '' : 'ghost'}`}
-            onClick={() => { setDays(p.days); setDraft(String(p.days)); }}
+            onClick={() => { setDays(p.days); setDraft(String(p.days)); setDraftNote(null); }}
           >
             {p.label}
           </button>
@@ -218,6 +241,12 @@ export default function FxRateCard({
         <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>days</span>
         <button className="btn" onClick={applyDraft}>Apply</button>
       </div>
+
+      {draftNote && (
+        <div style={{ fontSize: 12, color: 'var(--text-dim)', textAlign: 'right', marginTop: 6 }}>
+          {draftNote}
+        </div>
+      )}
 
       {loading ? (
         <div className="loading">Loading exchange rate…</div>

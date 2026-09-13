@@ -4,6 +4,10 @@ import { fetchQuotes } from '../services/priceFetcher.js';
 
 export const pricesRouter = express.Router();
 
+// Upper bound on ?days for the history endpoint (~55y) — past anything Yahoo
+// publishes, so it bounds the response without truncating a real series.
+export const MAX_PRICE_DAYS = 20000;
+
 /**
  * Batch live quotes for several symbols in one Yahoo call. `?symbols=^GSPC,^DJI,...`
  * Returns { quotes: { SYM: { price, currency, time, market_state, previous_close,
@@ -70,7 +74,11 @@ pricesRouter.get('/:symbol', async (req, res, next) => {
   try {
     const inst = await getInstrument(req.params.symbol);
     if (!inst) return res.status(404).json({ error: 'Instrument not found' });
-    const days = Math.min(Number(req.query.days || 90), 1825);
+    // Cap generously rather than at 5y — the FX pairs carry ~22y of history and the
+    // card lets you ask for all of it. Falls back to 90 on a non-numeric `days`
+    // (bare Number() would yield NaN and blow up the INTERVAL below).
+    const requested = Number(req.query.days);
+    const days = Math.min(Number.isFinite(requested) && requested >= 1 ? Math.floor(requested) : 90, MAX_PRICE_DAYS);
     const rows = await query(
       `SELECT trade_date, open_px, high_px, low_px, close_px, volume
        FROM prices

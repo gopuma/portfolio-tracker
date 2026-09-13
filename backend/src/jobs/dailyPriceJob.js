@@ -6,7 +6,10 @@ import { predictAndStore } from '../services/prediction.js';
 import { runAudit } from '../services/auditService.js';
 import { runDailyPredictions, runEvaluation } from '../services/competition/harness.js';
 
-const CRON = process.env.CRON_DAILY_REFRESH || '0 23 * * 1-5';
+// 06:30 KST, Tue–Sat: after the US close in both DST regimes (16:00 ET is 05:00 KST on
+// EDT, 06:00 KST on EST), so the run stores settled closes rather than a partial bar for
+// a session still in progress. Tue–Sat because a Friday US session closes Sat 05:00 KST.
+const CRON = process.env.CRON_DAILY_REFRESH || '30 6 * * 2-6';
 
 export function startDailyJob() {
   console.log(`[cron] Scheduling daily refresh at: ${CRON}`);

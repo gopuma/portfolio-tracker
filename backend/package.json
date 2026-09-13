@@ -10,6 +10,8 @@
     "migrate": "node scripts/migrate.js",
     "seed": "node scripts/seed.js",
     "backfill": "node scripts/backfill.js",
+    "backfill:fx": "node scripts/backfill-fx.js",
+    "backfill:prices": "node scripts/backfill-prices.js",
     "backtest": "node scripts/backtest.js",
     "test": "node --test"
   },

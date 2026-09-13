@@ -2,6 +2,7 @@ import express from 'express';
 import { query } from '../db.js';
 import { ensureTrackedInstrument } from '../services/instrumentService.js';
 import { fetchStatements, fetchEstimates } from '../services/fundamentalsService.js';
+import { computeRatios } from '../services/fundamentalRatios.js';
 import { buildConverter } from '../services/fxService.js';
 
 export const researchRouter = express.Router();
@@ -108,6 +109,71 @@ async function getEstimates(symbol, instrumentId) {
 }
 
 /**
+ * Statements for a symbol, served from the DB cache and refreshed past the TTL.
+ * Shared by the research page and the ratios endpoint so both see identical inputs.
+ */
+async function getStatements(symbol, instrumentId, nativeCcy) {
+  let quarterly = await loadStoredStatements(instrumentId, 'quarterly');
+  let annual = await loadStoredStatements(instrumentId, 'annual');
+  const now = Date.now() / 1000;
+  const fresh = rows => rows.length > 0 && rows.every(r => now - Number(r.fetched_ts) < STMT_TTL_MS / 1000);
+
+  if (!fresh(quarterly) || !fresh(annual)) {
+    const st = await fetchStatements(symbol);
+    if (st.quarterly.length) await upsertStatements(instrumentId, 'quarterly', st.quarterly, nativeCcy);
+    if (st.annual.length) await upsertStatements(instrumentId, 'annual', st.annual, nativeCcy);
+    quarterly = await loadStoredStatements(instrumentId, 'quarterly');
+    annual = await loadStoredStatements(instrumentId, 'annual');
+  }
+  return { quarterly, annual };
+}
+
+/**
+ * Uniform fundamental ratios (PER/PBR/EPS/ROE/…) for one symbol — the stock page's
+ * fundamentals panel. Deliberately lighter than the full research payload below: no ML
+ * sidecar call, no FX conversion, since ratios are computed in native currency.
+ *
+ * Priced off the latest stored close so the multiples match the rest of the app; the
+ * price and its date are returned so the UI can state what the ratio is "as of".
+ */
+researchRouter.get('/:symbol/ratios', async (req, res, next) => {
+  try {
+    let inst;
+    try {
+      inst = (await ensureTrackedInstrument(req.params.symbol)).instrument;
+    } catch (e) {
+      return res.status(e.status || 502).json({ error: e.message });
+    }
+
+    // Estimates give us the reporting currency and a shares fallback; a failure here
+    // only costs the fallback, so ratios still compute from statements alone.
+    const estimates = await getEstimates(req.params.symbol, inst.id).catch(() => null);
+    const { quarterly } = await getStatements(req.params.symbol, inst.id, estimates?.currency || inst.currency);
+    const nativeCcy = estimates?.currency || quarterly[0]?.currency || inst.currency || null;
+
+    const [px] = await query(
+      `SELECT close_px, DATE_FORMAT(trade_date,'%Y-%m-%d') AS trade_date
+         FROM prices WHERE instrument_id = ? ORDER BY trade_date DESC LIMIT 1`,
+      [inst.id]
+    );
+
+    const ratios = computeRatios(quarterly, {
+      price: px ? Number(px.close_px) : null,
+      currency: nativeCcy,
+      sharesOutstanding: estimates?.shares ?? null,
+    });
+
+    res.json({
+      symbol: inst.symbol,
+      display_name: inst.display_name,
+      asset_class: inst.asset_class,
+      price_date: px?.trade_date || null,
+      ...ratios,
+    });
+  } catch (e) { next(e); }
+});
+
+/**
  * Single-stock fundamentals research. Any searchable ticker works (auto-tracked).
  * Query: ?currency=native|USD|KRW (period-average FX conversion of absolute figures).
  */
@@ -123,21 +189,10 @@ researchRouter.get('/:symbol', async (req, res, next) => {
     const target = String(req.query.currency || 'native').toUpperCase();
 
     // Statements — DB cache with a 7-day TTL.
-    let quarterly = await loadStoredStatements(inst.id, 'quarterly');
-    let annual = await loadStoredStatements(inst.id, 'annual');
-    const now = Date.now() / 1000;
-    const fresh = rows => rows.length > 0 && rows.every(r => now - Number(r.fetched_ts) < STMT_TTL_MS / 1000);
-
     let estimates = await getEstimates(req.params.symbol, inst.id).catch(() => null);
+    const preCcy = estimates?.currency || inst.currency || null;
+    const { quarterly, annual } = await getStatements(req.params.symbol, inst.id, preCcy);
     const nativeCcy = estimates?.currency || quarterly[0]?.currency || annual[0]?.currency || inst.currency || null;
-
-    if (!fresh(quarterly) || !fresh(annual)) {
-      const st = await fetchStatements(req.params.symbol);
-      if (st.quarterly.length) await upsertStatements(inst.id, 'quarterly', st.quarterly, nativeCcy);
-      if (st.annual.length) await upsertStatements(inst.id, 'annual', st.annual, nativeCcy);
-      quarterly = await loadStoredStatements(inst.id, 'quarterly');
-      annual = await loadStoredStatements(inst.id, 'annual');
-    }
 
     // FX converter (period-average). Unsupported native currency → pass-through + flag.
     const conv = await buildConverter(nativeCcy, target);

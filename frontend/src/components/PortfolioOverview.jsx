@@ -1,3 +1,4 @@
+import RetirementCountdown from './RetirementCountdown.jsx';
 import GoldGapPanel from './GoldGapPanel.jsx';
 import FxRateCard from './FxRateCard.jsx';
 import VixCard from './VixCard.jsx';
@@ -9,6 +10,8 @@ import IndexCards from './IndexCards.jsx';
 export default function PortfolioOverview() {
   return (
     <>
+      <RetirementCountdown />
+
       <IndexCards />
 
       <FxRateCard />

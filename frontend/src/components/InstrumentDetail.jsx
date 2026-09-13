@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { api } from '../api.js';
+import FundamentalsPanel from './FundamentalsPanel.jsx';
 
 function fmtNum(n, digits = 2) {
   if (n == null || isNaN(n)) return '–';
@@ -296,6 +297,8 @@ export default function InstrumentDetail() {
       </div>
 
       <RiskPanel stats={stats} days={days} rf={rf} setRf={setRf} />
+
+      <FundamentalsPanel symbol={symbol} />
 
       <div className="grid-2">
         <div className="panel">

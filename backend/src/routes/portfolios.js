@@ -12,41 +12,56 @@ const MAX_HOLDINGS = 30;
 // Cash equivalents are stored as holdings with a reserved symbol `CASH:<CCY>` (no
 // instrument row); they're valued 1:1 in their currency. Supported cash currencies
 // match the app's base currencies.
-const CASH_CURRENCIES = ['USD', 'KRW'];
+const CASH_CURRENCIES = ['USD', 'KRW', 'JPY'];
 const cashSymbol = ccy => `CASH:${ccy}`;
 const isCash = sym => typeof sym === 'string' && sym.startsWith('CASH:');
 const cashCurrency = sym => sym.slice(5);
+// Fixed bottom-to-top order for the cash block in the value chart, so a given currency
+// always sits in the same place (and takes the same shade of the cash ramp).
+const CASH_STACK_ORDER = ['KRW', 'USD', 'JPY'];
 
 // Analytics window defaults (mirrors /analytics): trailing days, capped at 5y.
 const ANALYTICS_DEFAULT_DAYS = 365;
 const ANALYTICS_MAX_DAYS = 1825;
 const clampAnalyticsDays = raw => Math.min(Number(raw || ANALYTICS_DEFAULT_DAYS), ANALYTICS_MAX_DAYS);
 
-// Cache the live FX rate briefly so back-to-back portfolio reads don't each hit Yahoo.
+// Cache the live FX rates briefly so back-to-back portfolio reads don't each hit Yahoo.
 const FX_TTL_MS = 60_000;
-let fxCache = { rate: null, at: 0 };
+const fxCache = new Map(); // symbol -> { rate, at }
 
-// Latest USD/KRW (KRW per USD) for converting holding values to a common base.
-// Prefers the live Yahoo quote so conversions use the current rate, falling back
-// to the most recent stored EOD close if the live lookup is unavailable.
-async function getKrwPerUsd() {
+// Latest close for one FX pair. Prefers the live Yahoo quote so conversions use the
+// current rate, falling back to the most recent stored EOD close if that's unavailable.
+async function getFxRate(symbol) {
   const now = Date.now();
-  if (fxCache.rate && now - fxCache.at < FX_TTL_MS) return fxCache.rate;
+  const hit = fxCache.get(symbol);
+  if (hit && hit.rate && now - hit.at < FX_TTL_MS) return hit.rate;
 
   try {
-    const q = await fetchQuotes(['KRW=X']);
-    const live = q['KRW=X']?.price;
-    if (live && live > 0) { fxCache = { rate: Number(live), at: now }; return fxCache.rate; }
+    const q = await fetchQuotes([symbol]);
+    const live = q[symbol]?.price;
+    if (live && live > 0) { fxCache.set(symbol, { rate: Number(live), at: now }); return Number(live); }
   } catch { /* fall back to the stored close below */ }
 
   const rows = await query(
     `SELECT lp.close_px FROM instruments i
        JOIN v_latest_prices lp ON lp.instrument_id = i.id
-      WHERE i.symbol = 'KRW=X'`
+      WHERE i.symbol = ?`,
+    [symbol]
   );
   const rate = rows[0] ? Number(rows[0].close_px) : null;
-  if (rate) fxCache = { rate, at: now };
+  if (rate) fxCache.set(symbol, { rate, at: now });
   return rate;
+}
+
+// KRW per USD — the pivot rate every conversion routes through.
+const getKrwPerUsd = () => getFxRate('KRW=X');
+// KRW per JPY, for yen-denominated cash and securities.
+const getKrwPerJpy = () => getFxRate('JPYKRW=X');
+
+/** Both rates at once, in the shape `convert` expects. */
+async function getFxRates() {
+  const [krwPerUsd, krwPerJpy] = await Promise.all([getKrwPerUsd(), getKrwPerJpy()]);
+  return { krwPerUsd, krwPerJpy };
 }
 
 // Local-time 'YYYY-MM-DD' for a Date (server's timezone), used to date holding changes.
@@ -54,13 +69,36 @@ function dateOf(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function convert(amount, currency, base, krwPerUsd) {
+/**
+ * Convert between the supported currencies, pivoting through KRW so every pair works
+ * from the two rates we track (KRW=X = KRW per USD, JPYKRW=X = KRW per JPY).
+ *
+ * `rates` is { krwPerUsd, krwPerJpy }; a bare number is read as krwPerUsd, which is what
+ * the day-by-day chart walk passes when it only has that day's USD/KRW close.
+ *
+ * An unsupported currency, or a missing rate for the pair in hand, returns the amount
+ * unconverted — the long-standing behaviour, so a stray EUR/BRL holding is counted at
+ * face rather than dropped.
+ */
+function convert(amount, currency, base, rates) {
   if (amount == null) return null;
   if (currency === base) return amount;
-  if (!krwPerUsd) return amount; // can't convert; treat 1:1 (shouldn't happen — KRW=X is seeded)
-  if (base === 'USD' && currency === 'KRW') return amount / krwPerUsd;
-  if (base === 'KRW' && currency === 'USD') return amount * krwPerUsd;
-  return amount;
+  const { krwPerUsd, krwPerJpy } = typeof rates === 'number' ? { krwPerUsd: rates } : (rates || {});
+  const toKrw = (amt, ccy) => {
+    if (ccy === 'KRW') return amt;
+    if (ccy === 'USD') return krwPerUsd ? amt * krwPerUsd : null;
+    if (ccy === 'JPY') return krwPerJpy ? amt * krwPerJpy : null;
+    return null; // unsupported currency
+  };
+  const fromKrw = (krw, ccy) => {
+    if (krw == null) return null;
+    if (ccy === 'KRW') return krw;
+    if (ccy === 'USD') return krwPerUsd ? krw / krwPerUsd : null;
+    if (ccy === 'JPY') return krwPerJpy ? krw / krwPerJpy : null;
+    return null;
+  };
+  const out = fromKrw(toKrw(amount, currency), base);
+  return out == null ? amount : out;
 }
 
 // Holdings with latest + historical closes for one portfolio.
@@ -88,14 +126,14 @@ async function loadHoldings(portfolioId) {
 // window — i.e. each holding's return weighted by its value at the START of the
 // window, computed as (sum of end values) / (sum of start values) - 1. Weighting
 // by *current* value would overweight winners and bias the number upward.
-export function computePortfolio(rows, base, krwPerUsd) {
+export function computePortfolio(rows, base, fx) {
   const holdings = rows.map(r => {
     const shares = Number(r.shares);
 
     // Cash: face value in its own currency, no price history, flat (zero) return.
     if (isCash(r.symbol)) {
       const ccy = cashCurrency(r.symbol);
-      const mvBase = convert(shares, ccy, base, krwPerUsd);
+      const mvBase = convert(shares, ccy, base, fx);
       return {
         id: r.id,
         symbol: r.symbol,
@@ -121,8 +159,8 @@ export function computePortfolio(rows, base, krwPerUsd) {
     const latest = r.latest_close != null ? Number(r.latest_close) : null;
     const cost = Number(r.cost_price);
     const mvNative = latest != null ? shares * latest : null;
-    const mvBase = convert(mvNative, r.currency, base, krwPerUsd);
-    const costBase = convert(shares * cost, r.currency, base, krwPerUsd);
+    const mvBase = convert(mvNative, r.currency, base, fx);
+    const costBase = convert(shares * cost, r.currency, base, fx);
     const ret = (then) => (latest != null && then != null && Number(then) > 0 ? latest / Number(then) - 1 : null);
     return {
       id: r.id,
@@ -172,8 +210,8 @@ export function computePortfolio(rows, base, krwPerUsd) {
       const then = r[closeKey] != null ? Number(r[closeKey]) : null;
       if (latest == null || then == null || !(then > 0)) continue;
       const shares = Number(r.shares);
-      startSum += convert(shares * then, r.currency, base, krwPerUsd);
-      endSum += convert(shares * latest, r.currency, base, krwPerUsd);
+      startSum += convert(shares * then, r.currency, base, fx);
+      endSum += convert(shares * latest, r.currency, base, fx);
     }
     return {
       sec: startSum > 0 ? endSum / startSum - 1 : null,
@@ -215,14 +253,24 @@ export function computePortfolio(rows, base, krwPerUsd) {
 //             `shares`; 'delete' removes it.
 //   priceRows:[{ instrument_id, date:'YYYY-MM-DD', close }]   daily closes
 //   fxRows:   [{ date:'YYYY-MM-DD', fx }]                     daily KRW per USD
+//   backfillFrom: 'YYYY-MM-DD' | null — see below.
+//   fxJpyRows:[{ date:'YYYY-MM-DD', fx }]                     daily KRW per JPY (optional;
+//             only needed when a yen-denominated holding is in play)
 //
-// Returns { days: [{ date, total, breakdown:Map(symbol->value) }], nameBySymbol }
-// with one entry per priced day. Lots of the same symbol are combined per day.
-function walkDailyValues(events, priceRows, fxRows, base) {
-  // Cash equivalents are excluded from the value chart — it tracks invested securities
-  // only, so an idle cash band doesn't dominate or distort the trend.
-  events = events.filter(e => !isCash(e.symbol));
-  if (events.length === 0) return { days: [], nameBySymbol: new Map() };
+// BACKFILL. With `backfillFrom` set, priced days from that date up to the first real
+// change are also valued, using the composition as of that first change held constant —
+// "what this portfolio would have been worth through 2025, at the shares I opened with".
+// Only prices and FX move; nothing is written to the ledger, and those days are tagged
+// `backfill: true` so the UI can mark them as hypothetical rather than recorded. A lot
+// whose instrument had not listed yet simply has no price and drops out of those days.
+//
+// Returns { days: [{ date, total, fx, breakdown:Map(symbol->value) }], nameBySymbol }
+// with one entry per priced day (`fx` is that day's KRW-per-USD rate used to convert,
+// null when unknown). Lots of the same symbol are combined per day.
+function walkDailyValues(events, priceRows, fxRows, base, backfillFrom = null, fxJpyRows = []) {
+  // Cash rides in only when the caller asked for it (loadHistory decides); if it didn't,
+  // there are no CASH:<CCY> events here to begin with.
+  if (!events || events.length === 0) return { days: [], nameBySymbol: new Map() };
 
   // Daily close per instrument + daily FX, each with an as-of (latest <= d) lookup so
   // a day a given instrument didn't trade (e.g. a one-market holiday) still values.
@@ -235,6 +283,8 @@ function walkDailyValues(events, priceRows, fxRows, base) {
   for (const e of priceByInst.values()) e.dates = [...e.byDate.keys()].sort();
   const fxByDate = new Map(fxRows.map(r => [r.date, Number(r.fx)]));
   const fxDates = [...fxByDate.keys()].sort();
+  const jpyByDate = new Map((fxJpyRows || []).map(r => [r.date, Number(r.fx)]));
+  const jpyDates = [...jpyByDate.keys()].sort();
 
   const asOf = (dates, byDate, d) => {
     if (byDate.has(d)) return byDate.get(d);
@@ -244,20 +294,88 @@ function walkDailyValues(events, priceRows, fxRows, base) {
   };
   const priceAsOf = (instId, d) => { const e = priceByInst.get(instId); return e ? asOf(e.dates, e.byDate, d) : null; };
   const fxAsOf = (d) => asOf(fxDates, fxByDate, d);
-
-  // Trading days to value: every priced day from the first change onward.
-  const firstDate = events.reduce((m, e) => (e.effective_date < m ? e.effective_date : m), events[0].effective_date);
-  const dayset = new Set();
-  for (const e of priceByInst.values()) for (const d of e.dates) if (d >= firstDate) dayset.add(d);
-  const allDays = [...dayset].sort();
+  const jpyAsOf = (d) => (jpyDates.length ? asOf(jpyDates, jpyByDate, d) : null);
 
   const sorted = [...events].sort((a, b) =>
     a.effective_date < b.effective_date ? -1 : a.effective_date > b.effective_date ? 1 : (a.id ?? 0) - (b.id ?? 0));
 
+  // Trading days to value: from the first change onward, or from the backfill start if
+  // one was asked for and it reaches further back.
+  const firstDate = sorted[0].effective_date;
+  const from = backfillFrom && backfillFrom < firstDate ? backfillFrom : firstDate;
+  const dayset = new Set();
+  for (const e of priceByInst.values()) for (const d of e.dates) if (d >= from) dayset.add(d);
+  const allDays = [...dayset].sort();
+
+  // Each lot's opening size and the date its own history begins.
+  const opening = new Map();  // holding_id -> lot
+  const lotStart = new Map(); // holding_id -> 'YYYY-MM-DD'
+  for (const ev of sorted) {
+    if (lotStart.has(ev.holding_id) || ev.action === 'delete') continue;
+    lotStart.set(ev.holding_id, ev.effective_date);
+    opening.set(ev.holding_id, {
+      symbol: ev.symbol, instrument_id: ev.instrument_id, currency: ev.currency, shares: Number(ev.shares),
+    });
+  }
+
+  // The portfolio's OPENING DATE: the day the most lots begin, earliest wins a tie. That's
+  // the bulk import (or first sit-down) that established the position, and it's the
+  // composition the backfill projects backwards.
+  //
+  // Two rules fall out of it, and both matter:
+  //   · a lot starting BEFORE it (an RSU vest dated to when it really vested) keeps its own
+  //     real history, while the rest of the stack is still projected alongside — so the
+  //     chart doesn't collapse to that single lot for the months before the bulk begins;
+  //   · a lot starting AFTER it was genuinely bought later and is NEVER projected back —
+  //     it appears on its own date, which is what makes the backfill a record of the
+  //     position you opened with rather than of the one you hold now.
+  const startCounts = new Map();
+  for (const d of lotStart.values()) startCounts.set(d, (startCounts.get(d) || 0) + 1);
+  let openingDate = firstDate;
+  for (const [d, n] of [...startCounts].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+    if (n > (startCounts.get(openingDate) || 0)) openingDate = d;
+  }
+
   const current = new Map();      // holding_id -> { symbol, instrument_id, currency, shares }
   const nameBySymbol = new Map();
+  const ccyBySymbol = new Map();  // the currency a symbol's price is quoted in
   const days = [];
   let ei = 0;
+
+  // Value one composition on one day. Returns null if nothing could be priced.
+  const valueDay = (holdings, d) => {
+    const fx = fxAsOf(d);
+    const rates = { krwPerUsd: fx, krwPerJpy: jpyAsOf(d) };
+    const breakdown = new Map();
+    // Cash only: the balance in the currency it's actually held in, carried alongside the
+    // converted figure so the UI can show "₩617,643,519 → $460,567" and leave no doubt
+    // about which number is in which unit.
+    const native = new Map();
+    // Share count per symbol (summed across its lots), so the chart can print volume
+    // inside a bar segment when few enough holdings are selected to have room.
+    const shares = new Map();
+    let total = 0, priced = false;
+    for (const h of holdings.values()) {
+      // Cash is worth its face amount in its own currency — no price history to look up.
+      const cash = isCash(h.symbol);
+      const px = cash ? 1 : priceAsOf(h.instrument_id, d);
+      if (px == null || (h.currency !== base && fx == null)) continue; // can't value this lot today
+      const v = convert(h.shares * px, h.currency, base, rates);
+      breakdown.set(h.symbol, (breakdown.get(h.symbol) || 0) + v);
+      if (!cash) shares.set(h.symbol, (shares.get(h.symbol) || 0) + h.shares);
+      if (cash) native.set(h.symbol, (native.get(h.symbol) || 0) + h.shares);
+      total += v; priced = true;
+    }
+    // Carry the day's FX rate so the chart can show how much of a move is currency.
+    return priced ? { total, fx: fx ?? null, breakdown, native, shares } : null;
+  };
+
+  // Names and quote currencies come from the events regardless of which day a lot starts.
+  for (const ev of sorted) {
+    if (ev.name) nameBySymbol.set(ev.symbol, ev.name);
+    if (ev.currency) ccyBySymbol.set(ev.symbol, ev.currency);
+  }
+  const projecting = !!(backfillFrom && backfillFrom < firstDate);
 
   for (const d of allDays) {
     // Apply every change that has taken effect by day d (last write wins per lot).
@@ -265,77 +383,136 @@ function walkDailyValues(events, priceRows, fxRows, base) {
       const ev = sorted[ei++];
       if (ev.action === 'delete') current.delete(ev.holding_id);
       else current.set(ev.holding_id, { symbol: ev.symbol, instrument_id: ev.instrument_id, currency: ev.currency, shares: Number(ev.shares) });
-      if (ev.name) nameBySymbol.set(ev.symbol, ev.name);
     }
-    if (current.size === 0) continue;
 
-    const fx = fxAsOf(d);
-    const breakdown = new Map();
-    let total = 0, priced = false;
-    for (const h of current.values()) {
-      const px = priceAsOf(h.instrument_id, d);
-      if (px == null || (h.currency !== base && fx == null)) continue; // can't value this lot today
-      const v = convert(h.shares * px, h.currency, base, fx);
-      breakdown.set(h.symbol, (breakdown.get(h.symbol) || 0) + v);
-      total += v; priced = true;
+    // Backfill: before the opening date, any lot of the opening position that hasn't started
+    // yet rides along at its opening size. A day carrying one is synthetic and flagged.
+    let holdings = current, synthetic = false;
+    if (projecting && d < openingDate) {
+      for (const [id, start] of lotStart) {
+        if (d >= start || start > openingDate) continue; // already real, or bought later
+        if (!synthetic) { holdings = new Map(current); synthetic = true; }
+        holdings.set(id, opening.get(id));
+      }
     }
-    if (!priced) continue; // no priced holdings this day
-    days.push({ date: d, total, breakdown });
+    if (holdings.size === 0) continue;
+
+    const v = valueDay(holdings, d);
+    if (!v) continue; // no priced holdings this day
+    days.push(synthetic ? { date: d, ...v, backfill: true } : { date: d, ...v });
   }
 
-  return { days, nameBySymbol };
+  return { days, nameBySymbol, ccyBySymbol };
 }
 
-// Shape per-period rows ([{ [labelKey]: x, total, breakdown:Map }]) into the stacked
-// chart payload: { symbols:[{key,symbol,name}], points:[{ [labelKey], total, [key]:value }] }.
+// Shape per-period rows ([{ [labelKey]: x, total, fx, breakdown:Map }]) into the stacked
+// chart payload: { symbols:[{key,symbol,name}], points:[{ [labelKey], total, fx, [key]:value }] }.
 // Series are every symbol that ever appears, ordered by the latest period's value.
-function buildSeries(rows, labelKey, nameBySymbol) {
+function buildSeries(rows, labelKey, nameBySymbol, ccyBySymbol = new Map()) {
   if (rows.length === 0) return { symbols: [], points: [] };
   const last = rows.at(-1).breakdown;
   const allSyms = new Set();
   for (const r of rows) for (const sym of r.breakdown.keys()) allSyms.add(sym);
-  const ordered = [...allSyms].sort((a, b) => (last.get(b) ?? 0) - (last.get(a) ?? 0));
-  const symbols = ordered.map((sym, i) => ({ key: `s${i}`, symbol: sym, name: nameBySymbol.get(sym) || sym }));
+  // Cash is emitted as one contiguous block at the bottom of the stack, in a fixed currency
+  // order, so it reads as a single base section under the securities instead of its
+  // currencies being scattered through them by size. Securities keep size ordering.
+  const cashSyms = [...allSyms].filter(isCash).sort((a, b) => {
+    const rank = c => { const i = CASH_STACK_ORDER.indexOf(cashCurrency(c)); return i < 0 ? 99 : i; };
+    return rank(a) - rank(b);
+  });
+  const secSyms = [...allSyms].filter(s => !isCash(s)).sort((a, b) => (last.get(b) ?? 0) - (last.get(a) ?? 0));
+  const ordered = [...cashSyms, ...secSyms];
+  const symbols = ordered.map((sym, i) => ({
+    key: `s${i}`, symbol: sym, name: nameBySymbol.get(sym) || sym,
+    currency: ccyBySymbol.get(sym) || null, // the unit its price is quoted in
+  }));
   const keyBySym = new Map(ordered.map((sym, i) => [sym, `s${i}`]));
   const points = rows.map(r => {
-    const point = { [labelKey]: r[labelKey], total: r.total };
+    const point = { [labelKey]: r[labelKey], total: r.total, fx: r.fx ?? null };
+    // Only tagged on synthetic (backfilled) periods, so real history stays untouched.
+    if (r.backfill) point.backfill = true;
     for (const [sym, val] of r.breakdown) point[keyBySym.get(sym)] = val;
+    // Cash only, and only where there is one: { <seriesKey>: faceAmountInItsOwnCurrency }.
+    if (r.native && r.native.size > 0) {
+      point.native = {};
+      for (const [sym, amt] of r.native) point.native[keyBySym.get(sym)] = amt;
+    }
+    // Securities only: the share count behind each segment, for the on-bar volume label.
+    if (r.shares && r.shares.size > 0) {
+      point.shares = {};
+      for (const [sym, n] of r.shares) point.shares[keyBySym.get(sym)] = n;
+    }
     return point;
   });
   return { symbols, points };
 }
 
-// Month-by-month AVERAGE total asset value, composition-aware: each bar is the mean of
-// the month's daily totals, so both intra-month buys/sells and daily price moves show.
-// Returns { symbols, points:[{ month, total, [key]:avgValue }] }.
-export function monthlyAverageValues(events, priceRows, fxRows, base) {
+// Month-by-month total asset value, composition-aware. SECURITIES are the mean of their
+// daily values across the month, so both intra-month trades and daily price moves show.
+// CASH is the month's CLOSING balance instead — a bank balance isn't a thing you average,
+// and doing so made a fresh deposit read at a fraction of its size in the part-elapsed
+// current month. `total` is the sum of the bands as drawn, so it matches the stack either
+// way. Returns { symbols, points:[{ month, total, fx, [key]:value }] } — `fx` is the
+// month's average KRW-per-USD rate, the currency component behind the bar's move.
+export function monthlyAverageValues(events, priceRows, fxRows, base, backfillFrom = null, fxJpyRows = []) {
   if (!events || events.length === 0) return { symbols: [], points: [] };
-  const { days, nameBySymbol } = walkDailyValues(events, priceRows, fxRows, base);
+  const { days, nameBySymbol, ccyBySymbol } = walkDailyValues(events, priceRows, fxRows, base, backfillFrom, fxJpyRows);
 
-  const monthAgg = new Map(); // ym -> { count, total, bySymbol:Map(symbol->sum) }
+  const monthAgg = new Map(); // ym -> { count, fxSum, fxCount, backfill, bySymbol, lastCash, lastNative }
   for (const day of days) {
     const ym = day.date.slice(0, 7);
     let agg = monthAgg.get(ym);
-    if (!agg) { agg = { count: 0, total: 0, bySymbol: new Map() }; monthAgg.set(ym, agg); }
-    agg.count++; agg.total += day.total;
-    for (const [sym, v] of day.breakdown) agg.bySymbol.set(sym, (agg.bySymbol.get(sym) || 0) + v);
+    if (!agg) {
+      agg = {
+        count: 0, fxSum: 0, fxCount: 0, backfill: false,
+        bySymbol: new Map(), lastCash: new Map(), lastNative: new Map(), lastShares: new Map(),
+      };
+      monthAgg.set(ym, agg);
+    }
+    agg.count++;
+    // A month straddling the backfill boundary is part hypothetical, so flag the whole bar.
+    if (day.backfill) agg.backfill = true;
+    // Average the month's FX the same way as its value, over the days that had a rate.
+    if (day.fx != null) { agg.fxSum += day.fx; agg.fxCount++; }
+    for (const [sym, v] of day.breakdown) {
+      if (isCash(sym)) continue; // cash is closing-balance, handled below
+      agg.bySymbol.set(sym, (agg.bySymbol.get(sym) || 0) + v);
+    }
+    // Cash takes the month's CLOSING balance, not its average: a balance is a balance, and
+    // averaging one over a part-elapsed month understates money you actually hold (a deposit
+    // on the 9th would otherwise show at a third of its size). `days` is date-ordered, so
+    // replacing the snapshot each day leaves the last day's. Replacing rather than merging
+    // matters — a balance withdrawn to zero must disappear, not linger from an earlier day.
+    agg.lastCash = new Map([...day.breakdown].filter(([sym]) => isCash(sym)));
+    agg.lastNative = new Map(day.native || []);
+    // Volume is a count, so like cash it takes the month's CLOSING position.
+    agg.lastShares = new Map(day.shares || []);
   }
 
   const rows = [...monthAgg.keys()].sort().map(ym => {
     const agg = monthAgg.get(ym);
     const breakdown = new Map();
     for (const [sym, sum] of agg.bySymbol) breakdown.set(sym, sum / agg.count);
-    return { month: ym, total: agg.total / agg.count, breakdown };
+    for (const [sym, v] of agg.lastCash) breakdown.set(sym, v);
+    // Total is the sum of the bands as drawn, so the on-bar figure always matches the stack.
+    let total = 0;
+    for (const v of breakdown.values()) total += v;
+    return {
+      month: ym, total, breakdown, native: agg.lastNative, shares: agg.lastShares,
+      fx: agg.fxCount ? agg.fxSum / agg.fxCount : null,
+      backfill: agg.backfill,
+    };
   });
-  return buildSeries(rows, 'month', nameBySymbol);
+  return buildSeries(rows, 'month', nameBySymbol, ccyBySymbol);
 }
 
 // Day-by-day total asset value, composition-aware: each bar is one trading day's close
-// total. Returns { symbols, points:[{ date, total, [key]:value }] }.
-export function dailyValues(events, priceRows, fxRows, base) {
+// total. Returns { symbols, points:[{ date, total, fx, [key]:value }] } — `fx` is that
+// day's KRW-per-USD rate.
+export function dailyValues(events, priceRows, fxRows, base, backfillFrom = null, fxJpyRows = []) {
   if (!events || events.length === 0) return { symbols: [], points: [] };
-  const { days, nameBySymbol } = walkDailyValues(events, priceRows, fxRows, base);
-  return buildSeries(days, 'date', nameBySymbol);
+  const { days, nameBySymbol, ccyBySymbol } = walkDailyValues(events, priceRows, fxRows, base, backfillFrom, fxJpyRows);
+  return buildSeries(days, 'date', nameBySymbol, ccyBySymbol);
 }
 
 // Append a holding-change event to the log, dated today (server local time). `action`
@@ -349,33 +526,39 @@ async function recordHistory(portfolioId, { holding_id, symbol, account, shares,
   );
 }
 
-// Composition change-log for the value chart, derived from the transaction ledger:
-// each security trade becomes a `set` (cumulative shares as of its trade_date). Cash is
-// skipped (the chart is securities-only). Correctly dated by each trade's real trade_date.
-async function loadHistory(portfolioId) {
+// Composition change-log for the value chart, derived from the transaction ledger: each
+// trade becomes a `set` (cumulative shares as of its trade_date). Correctly dated by each
+// trade's real trade_date. `includeCash` also folds deposits/withdrawals in as running
+// CASH:<CCY> balances; without it the chart stays securities-only.
+async function loadHistory(portfolioId, includeCash = false) {
   const txns = await loadTransactions(portfolioId);
-  const secTxns = txns.filter(t => t.side === 'buy' || t.side === 'sell');
-  if (secTxns.length === 0) return [];
-  const symbols = [...new Set(secTxns.map(t => t.symbol))];
-  const placeholders = symbols.map(() => '?').join(',');
-  const instRows = await query(
-    `SELECT symbol, id, display_name FROM instruments WHERE symbol IN (${placeholders})`,
-    symbols
-  );
-  const instIdBySymbol = Object.fromEntries(instRows.map(r => [r.symbol, r.id]));
-  const nameBySymbol = Object.fromEntries(instRows.map(r => [r.symbol, r.display_name]));
-  return transactionsToEvents(secTxns, nameBySymbol, instIdBySymbol);
+  const wanted = txns.filter(t =>
+    t.side === 'buy' || t.side === 'sell' || (includeCash && (t.side === 'deposit' || t.side === 'withdraw')));
+  if (wanted.length === 0) return [];
+  // Only real securities have instrument rows; CASH:<CCY> is a reserved synthetic symbol.
+  const symbols = [...new Set(wanted.filter(t => !isCash(t.symbol)).map(t => t.symbol))];
+  let instIdBySymbol = {}, nameBySymbol = {};
+  if (symbols.length > 0) {
+    const placeholders = symbols.map(() => '?').join(',');
+    const instRows = await query(
+      `SELECT symbol, id, display_name FROM instruments WHERE symbol IN (${placeholders})`,
+      symbols
+    );
+    instIdBySymbol = Object.fromEntries(instRows.map(r => [r.symbol, r.id]));
+    nameBySymbol = Object.fromEntries(instRows.map(r => [r.symbol, r.display_name]));
+  }
+  return transactionsToEvents(wanted, nameBySymbol, instIdBySymbol, includeCash);
 }
 
 /** List all portfolios with rolled-up returns. */
 portfoliosRouter.get('/', async (_req, res, next) => {
   try {
     const portfolios = await query(`SELECT id, name, base_currency, created_at FROM portfolios ORDER BY created_at DESC`);
-    const krwPerUsd = await getKrwPerUsd();
+    const fx = await getFxRates();
     const out = [];
     for (const p of portfolios) {
       const rows = await loadHoldings(p.id);
-      const { totals } = computePortfolio(rows, p.base_currency, krwPerUsd);
+      const { totals } = computePortfolio(rows, p.base_currency, fx);
       out.push({ ...p, holdings_count: rows.length, ...totals });
     }
     res.json({ count: out.length, portfolios: out });
@@ -399,10 +582,15 @@ portfoliosRouter.get('/:id', async (req, res, next) => {
     const rows = await query(`SELECT id, name, base_currency, created_at FROM portfolios WHERE id = ?`, [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Portfolio not found' });
     const p = rows[0];
-    const krwPerUsd = await getKrwPerUsd();
+    const fx = await getFxRates();
     const holdingRows = await loadHoldings(p.id);
-    const { holdings, totals } = computePortfolio(holdingRows, p.base_currency, krwPerUsd);
-    res.json({ ...p, max_holdings: MAX_HOLDINGS, krw_per_usd: krwPerUsd, holdings, totals });
+    const { holdings, totals } = computePortfolio(holdingRows, p.base_currency, fx);
+    // Both rates go to the client so it can mirror the same conversions locally.
+    res.json({
+      ...p, max_holdings: MAX_HOLDINGS,
+      krw_per_usd: fx.krwPerUsd, krw_per_jpy: fx.krwPerJpy,
+      holdings, totals,
+    });
   } catch (e) { next(e); }
 });
 
@@ -411,7 +599,18 @@ portfoliosRouter.get('/:id', async (req, res, next) => {
  * the holding change log. `?granularity=daily` returns one point per trading day (each
  * day's close total); the default `monthly` returns each month's average across its
  * trading days. Returns { base_currency, granularity, symbols, points } — daily points
- * carry a `date`, monthly points a `month`.
+ * carry a `date`, monthly points a `month`, and every point carries the `fx` (KRW per USD)
+ * that valued it, so the chart can show the exchange rate behind each bar.
+ *
+ * `?backfill_from=YYYY-MM-DD` prepends synthetic periods from that date up to the first
+ * recorded trade, valuing the opening composition at each day's real close and FX (see
+ * walkDailyValues). Those points come back tagged `backfill: true`, and the echoed
+ * `backfill_from` is null when the request asked for a date the ledger already covers.
+ * Nothing is written: the ledger, cost basis and returns are untouched by this.
+ *
+ * `?include_cash=1` folds cash balances in as extra `CASH:<CCY>` series, each valued at
+ * face in its own currency and converted at the same daily rate as everything else — so a
+ * monthly bar carries the month's averaged conversion and a daily bar that day's.
  */
 portfoliosRouter.get('/:id/value-history', async (req, res, next) => {
   try {
@@ -421,11 +620,21 @@ portfoliosRouter.get('/:id/value-history', async (req, res, next) => {
     // Conversion uses each day's FX rate (loaded below), so it's historically accurate.
     const base = ['USD', 'KRW'].includes(req.query.currency) ? req.query.currency : pf[0].base_currency;
     const granularity = req.query.granularity === 'daily' ? 'daily' : 'monthly';
+    // Optional synthetic pre-history start. Only a well-formed past date is honoured.
+    const asked = String(req.query.backfill_from || '');
+    const backfillFrom = /^\d{4}-\d{2}-\d{2}$/.test(asked) && asked <= dateOf(new Date()) ? asked : null;
+    const includeCash = req.query.include_cash === '1' || req.query.include_cash === 'true';
 
-    const events = await loadHistory(req.params.id);
-    if (events.length === 0) return res.json({ base_currency: base, granularity, symbols: [], points: [] });
+    const events = await loadHistory(req.params.id, includeCash);
+    if (events.length === 0) {
+      return res.json({ base_currency: base, granularity, backfill_from: null, include_cash: includeCash, symbols: [], points: [] });
+    }
 
     const minDate = events[0].effective_date; // ordered by effective_date asc
+    // A backfill start only counts if it actually predates the ledger; when it does, the
+    // price/FX loads below have to reach back that far too.
+    const backfill = backfillFrom && backfillFrom < minDate ? backfillFrom : null;
+    const loadFrom = backfill || minDate;
     const instIds = [...new Set(events.map(e => e.instrument_id).filter(Boolean))];
     let priceRows = [];
     if (instIds.length > 0) {
@@ -435,7 +644,7 @@ portfoliosRouter.get('/:id/value-history', async (req, res, next) => {
            FROM prices
           WHERE instrument_id IN (${placeholders}) AND trade_date >= ?
           ORDER BY trade_date ASC`,
-        [...instIds, minDate]
+        [...instIds, loadFrom]
       );
     }
     // Daily USD/KRW for converting cross-currency holdings to the base.
@@ -444,7 +653,7 @@ portfoliosRouter.get('/:id/value-history', async (req, res, next) => {
          FROM prices p JOIN instruments i ON i.id = p.instrument_id
         WHERE i.symbol = 'KRW=X' AND p.trade_date >= ?
         ORDER BY p.trade_date ASC`,
-      [minDate]
+      [loadFrom]
     );
     // Live rate for the LATEST bar only: override (or fill in) the FX on the most recent
     // trading day with the live KRW/USD quote, so the current bar reflects today's rate
@@ -454,11 +663,22 @@ portfoliosRouter.get('/:id/value-history', async (req, res, next) => {
       const latestPriceDate = priceRows.reduce((m, r) => (r.date > m ? r.date : m), priceRows[0].date);
       fxRows.push({ date: latestPriceDate, fx: liveKrwPerUsd }); // appended → wins in fxByDate
     }
+    // Daily KRW/JPY, loaded only when a yen-denominated holding actually needs it.
+    let fxJpyRows = [];
+    if (events.some(e => e.currency === 'JPY')) {
+      fxJpyRows = await query(
+        `SELECT DATE_FORMAT(p.trade_date, '%Y-%m-%d') AS date, p.close_px AS fx
+           FROM prices p JOIN instruments i ON i.id = p.instrument_id
+          WHERE i.symbol = 'JPYKRW=X' AND p.trade_date >= ?
+          ORDER BY p.trade_date ASC`,
+        [loadFrom]
+      );
+    }
 
     const { symbols, points } = granularity === 'daily'
-      ? dailyValues(events, priceRows, fxRows, base)
-      : monthlyAverageValues(events, priceRows, fxRows, base);
-    res.json({ base_currency: base, granularity, symbols, points });
+      ? dailyValues(events, priceRows, fxRows, base, backfill, fxJpyRows)
+      : monthlyAverageValues(events, priceRows, fxRows, base, backfill, fxJpyRows);
+    res.json({ base_currency: base, granularity, backfill_from: backfill, include_cash: includeCash, symbols, points });
   } catch (e) { next(e); }
 });
 
@@ -592,7 +812,11 @@ async function rederiveAndCheck(pid, newTxId) {
 
 /**
  * Add a holding = record a BUY in the ledger (accumulates). Body: { symbol, shares, price?,
- * account?, trade_date? }. Holdings/chart/cash derive from the ledger.
+ * account?, trade_date?, avg_cost? }. Holdings/chart/cash derive from the ledger.
+ *
+ * `price` is what these particular shares cost; the lot's average is then recomputed over
+ * every buy. `avg_cost` instead states what the average should be AFTER this purchase —
+ * for when your broker's average is the number you trust — and is applied last.
  */
 portfoliosRouter.post('/:id/holdings', async (req, res, next) => {
   try {
@@ -626,8 +850,19 @@ portfoliosRouter.post('/:id/holdings', async (req, res, next) => {
     const trade_date = String(req.body?.trade_date || dateOf(new Date())).slice(0, 10);
     const txId = await addTransaction(pid, { symbol: inst.symbol, account, side: 'buy', shares, price, currency: inst.currency, trade_date });
     const chk = await rederiveAndCheck(pid, txId);
+    if (chk.error) return res.status(400).json({ error: chk.error });
 
-    res.status(201).json({ symbol: inst.symbol, account, shares, cost_price: price, currency: inst.currency, latest_close: latestCloseVal, warnings: chk.warnings || [] });
+    // Optional: pin the lot's resulting average rather than letting it fall out of the buys.
+    let costPrice = price;
+    const avgInput = req.body?.avg_cost != null && req.body.avg_cost !== '' ? Number(req.body.avg_cost) : null;
+    if (avgInput != null) {
+      if (!Number.isFinite(avgInput) || avgInput <= 0) return res.status(400).json({ error: 'avg_cost must be a positive number' });
+      await setLotAverageCost(pid, inst.symbol, account, avgInput);
+      await rederivePortfolioHoldings(pid);
+      costPrice = avgInput;
+    }
+
+    res.status(201).json({ symbol: inst.symbol, account, shares, cost_price: costPrice, currency: inst.currency, latest_close: latestCloseVal, warnings: chk.warnings || [] });
   } catch (e) { next(e); }
 });
 
@@ -652,24 +887,91 @@ portfoliosRouter.post('/:id/cash', async (req, res, next) => {
 });
 
 /**
- * Adjust a holding's quantity by recording the matching trade (buy/sell for securities,
- * deposit/withdraw for cash) to reach the target `shares`. Body: { shares }. Cost basis and
- * account are ledger-derived and not editable here — use transactions for those.
+ * Rewrite a lot's buy prices so its derived average cost equals `target`.
+ *
+ * Cost basis is derived from the ledger (average cost over the buys), so it can't just be
+ * written to the holdings cache — the next re-derive would overwrite it. Instead the buys
+ * are rescaled by target/currentAvg, which lands the average exactly on target while
+ * keeping the relative shape of the purchase history. When the current average is zero (or
+ * unusable) every buy is set flat to the target instead.
+ *
+ * Only prices change, never shares — so the value chart, which reads share counts alone,
+ * is unaffected. Returns the number of ledger rows touched.
+ */
+async function setLotAverageCost(portfolioId, symbol, account, target) {
+  const buys = await query(
+    `SELECT id, shares, price FROM transactions
+      WHERE portfolio_id = ? AND symbol = ? AND account = ? AND side = 'buy'
+      ORDER BY trade_date ASC, id ASC`,
+    [portfolioId, symbol, account || '']
+  );
+  if (buys.length === 0) return 0;
+
+  const totalShares = buys.reduce((s, b) => s + Number(b.shares), 0);
+  const totalCost = buys.reduce((s, b) => s + Number(b.shares) * Number(b.price), 0);
+  const currentAvg = totalShares > 0 ? totalCost / totalShares : 0;
+  const scale = currentAvg > 0 ? target / currentAvg : null;
+
+  for (const b of buys) {
+    const price = scale != null ? Number(b.price) * scale : target;
+    await query(`UPDATE transactions SET price = ? WHERE id = ?`, [price, b.id]);
+  }
+  return buys.length;
+}
+
+/**
+ * Adjust a holding's quantity and/or its average cost. Body: { shares?, cost_price? }.
+ *
+ * `shares` records the matching trade (buy/sell for securities, deposit/withdraw for cash)
+ * to reach the target. `cost_price` rescales the lot's existing buys so the derived average
+ * matches — see setLotAverageCost. Both are ledger writes, so they survive a re-derive.
  */
 portfoliosRouter.patch('/:id/holdings/:holdingId', async (req, res, next) => {
   try {
     const pid = req.params.id;
-    if (req.body?.shares === undefined) {
-      return res.status(400).json({ error: 'Only quantity can be adjusted here; cost basis and account are managed via transactions.' });
+    const wantsShares = req.body?.shares !== undefined;
+    const wantsCost = req.body?.cost_price !== undefined && req.body.cost_price !== '';
+    if (!wantsShares && !wantsCost) {
+      return res.status(400).json({ error: 'Nothing to update (shares or cost_price).' });
     }
+
+    // Cost-only edit: rescale the lot's buys, then re-derive.
+    if (!wantsShares) {
+      const cost = Number(req.body.cost_price);
+      if (!Number.isFinite(cost) || cost <= 0) return res.status(400).json({ error: 'cost_price must be a positive number' });
+      const [row] = await query(`SELECT symbol, account FROM portfolio_holdings WHERE id = ? AND portfolio_id = ?`, [req.params.holdingId, pid]);
+      if (!row) return res.status(404).json({ error: 'Holding not found' });
+      if (isCash(row.symbol)) return res.status(400).json({ error: 'Cash is always valued 1:1 — it has no cost basis to edit.' });
+      const n = await setLotAverageCost(pid, row.symbol, row.account, cost);
+      if (n === 0) return res.status(400).json({ error: 'No purchases on record for this lot, so there is no cost basis to rescale.' });
+      await rederivePortfolioHoldings(pid);
+      return res.json({ updated: 1, cost_price: cost, repriced_buys: n });
+    }
+
     const target = Number(req.body.shares);
     if (!Number.isFinite(target) || target < 0) return res.status(400).json({ error: 'shares must be a non-negative number' });
 
     const [row] = await query(`SELECT symbol, account, shares, currency, cost_price FROM portfolio_holdings WHERE id = ? AND portfolio_id = ?`, [req.params.holdingId, pid]);
     if (!row) return res.status(404).json({ error: 'Holding not found' });
 
+    // A cost_price sent alongside shares is applied after the trade, so the average lands
+    // on the target across the new share count too.
+    const cost = wantsCost ? Number(req.body.cost_price) : null;
+    if (wantsCost && (!Number.isFinite(cost) || cost <= 0)) {
+      return res.status(400).json({ error: 'cost_price must be a positive number' });
+    }
+    const applyCost = async () => {
+      if (!wantsCost || isCash(row.symbol)) return null;
+      const n = await setLotAverageCost(pid, row.symbol, row.account, cost);
+      if (n > 0) await rederivePortfolioHoldings(pid);
+      return n;
+    };
+
     const delta = target - Number(row.shares);
-    if (Math.abs(delta) < 1e-9) return res.json({ updated: 1 });
+    if (Math.abs(delta) < 1e-9) {
+      const repriced = await applyCost();
+      return res.json({ updated: 1, ...(repriced ? { cost_price: cost, repriced_buys: repriced } : {}) });
+    }
     const trade_date = dateOf(new Date());
 
     if (isCash(row.symbol)) {
@@ -681,7 +983,8 @@ portfoliosRouter.patch('/:id/holdings/:holdingId', async (req, res, next) => {
     const txId = await addTransaction(pid, { symbol: row.symbol, account: row.account, side: delta > 0 ? 'buy' : 'sell', shares: Math.abs(delta), price, currency: row.currency, trade_date });
     const chk = await rederiveAndCheck(pid, txId);
     if (chk.error) return res.status(400).json({ error: chk.error });
-    res.json({ updated: 1, warnings: chk.warnings || [] });
+    const repriced = await applyCost();
+    res.json({ updated: 1, warnings: chk.warnings || [], ...(repriced ? { cost_price: cost, repriced_buys: repriced } : {}) });
   } catch (e) { next(e); }
 });
 
