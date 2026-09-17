@@ -80,6 +80,9 @@ const CASH_RAMP = { KRW: '#776c60', USD: '#b0a294', JPY: '#e8e0d6' };
 // Glyph stamped inside a cash band. KRW has none — its band is the largest and reads
 // cleaner unmarked; the ramp position, legend name and tooltip still identify it.
 const CASH_GLYPH = { USD: '$', JPY: '¥' };
+// Most bars on screen that still leave room for the cash-band hairline (~6px+ per bar at
+// typical panel widths). Beyond this the stroke would swallow the fill.
+const HAIRLINE_MAX_BARS = 150;
 const isCashSym = s => typeof s === 'string' && s.startsWith('CASH:');
 const cashCcyOf = s => (isCashSym(s) ? s.slice(5) : null);
 const seriesColor = (symbol, i) => (isCashSym(symbol) ? (CASH_RAMP[cashCcyOf(symbol)] || '#8b8378') : colorAt(i));
@@ -96,6 +99,8 @@ const PRESETS = [
   { label: '3Y', months: 36 },
   { label: 'All', months: null },
 ];
+// The window the chart opens on: the 1Y preset.
+const DEFAULT_RANGE_MONTHS = 12;
 
 const inputStyle = {
   width: 72,
@@ -347,17 +352,23 @@ function makeFxLabel(data) {
 // Share count printed inside a bar segment. Only drawn when few enough holdings are
 // selected that the segments are tall enough to read — with a full stack of 17 the bands
 // are a few pixels each and the numbers would be a smear.
+const VOL_FONT = 9;
 function makeVolumeLabel(data, key) {
   return function VolumeLabel({ x, y, width, height, index }) {
     const n = data[index]?.shares?.[key];
     if (n == null || x == null || y == null) return null;
-    if (!(height > 13) || !(width > 30)) return null;
+    // A monthly bar is only ~24-30px wide across a couple of years, so the thresholds have
+    // to be sized to that, not to a comfortable one. Falls back to a compact form ("3.2K")
+    // when the full count won't fit rather than letting it spill into the next bar.
+    if (!(height > 11) || !(width > 18)) return null;
+    const full = Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+    const fits = full.length * VOL_FONT * 0.58 <= width;
     return (
       <text
         x={x + width / 2} y={y + height / 2} textAnchor="middle" dominantBaseline="central"
-        fontSize={10} fontWeight={600} fill="#0d1117" fillOpacity={0.8} pointerEvents="none"
+        fontSize={VOL_FONT} fontWeight={700} fill="#0d1117" fillOpacity={0.85} pointerEvents="none"
       >
-        {Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+        {fits ? full : fmtCompact(n)}
       </text>
     );
   };
@@ -392,24 +403,25 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
   const [loading, setLoading] = useState(true);
   // Stock currently hovered (in the chart or legend); highlights it everywhere.
   const [hoverKey, setHoverKey] = useState(null);
-  // Trailing window in months to display (null = all available).
-  const [rangeMonths, setRangeMonths] = useState(null);
-  const [draft, setDraft] = useState('');
+  // Trailing window in months to display (null = all available). Opens on the last year.
+  const [rangeMonths, setRangeMonths] = useState(DEFAULT_RANGE_MONTHS);
+  const [draft, setDraft] = useState(String(DEFAULT_RANGE_MONTHS));
   // 'monthly' = each bar is the month's average; 'daily' = each bar is a day's close.
   const [granularity, setGranularity] = useState('monthly');
   const daily = granularity === 'daily';
-  // Display currency for the chart. Defaults to the portfolio's base; the backend
+  // Display currency for the chart. Opens in USD whatever the portfolio's base; the backend
   // re-denominates using each day's FX rate (historically accurate).
-  const [displayCcy, setDisplayCcy] = useState(base || 'USD');
+  const [displayCcy, setDisplayCcy] = useState('USD');
   // Show the KRW/USD rate each period was valued at: on the bars and as an overlay line.
   const [showFx, setShowFx] = useState(true);
   // Which series are shown. null = all (the default); otherwise a Set of series keys.
   // Kept as keys rather than symbols so it survives a currency switch.
   const [picked, setPicked] = useState(null);
   const [filterOpen, setFilterOpen] = useState(false);
-  // Fold cash balances into the stack. Off by default so the chart stays a picture of the
-  // invested position; a large idle balance otherwise flattens the securities trend.
-  const [showCash, setShowCash] = useState(false);
+  // Fold cash balances into the stack. On by default so the bars show total assets; switch
+  // it off to see the invested position alone, since a large idle balance can flatten the
+  // securities trend.
+  const [showCash, setShowCash] = useState(true);
 
   const applyDraft = () => {
     const n = Math.round(Number(draft));
@@ -700,8 +712,10 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
                       fill={seriesColor(s.symbol, i)} maxBarSize={72} fillOpacity={dim ? 0.25 : 1}
                       radius={isTop ? [2, 2, 0, 0] : [0, 0, 0, 0]}
                       // A hairline in the panel colour separates touching segments, so the
-                      // cash bands read as their own blocks rather than one mass.
-                      stroke="#1a1f29" strokeWidth={cashCcy ? 1 : 0}
+                      // cash bands read as their own blocks rather than one mass. Skipped
+                      // when the bars are too thin for it: a daily view over a couple of years
+                      // is ~1px per bar, and a 1px stroke would paint the whole band dark.
+                      stroke="#1a1f29" strokeWidth={cashCcy && visible.length <= HAIRLINE_MAX_BARS ? 1 : 0}
                       onMouseEnter={() => setHoverKey(s.key)}
                       onMouseLeave={() => setHoverKey(null)}
                     >

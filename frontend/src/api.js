@@ -1,5 +1,10 @@
 const BASE = import.meta.env.VITE_API_BASE || '/api';
 
+// The backend refuses state-changing requests without this header (backend/src/security.js):
+// a hostile web page can't attach it without a CORS preflight, which only this app passes.
+const WRITE_HEADERS = { 'X-Requested-With': 'portfolio-tracker' };
+const JSON_WRITE_HEADERS = { ...WRITE_HEADERS, 'Content-Type': 'application/json' };
+
 async function get(path) {
   const res = await fetch(`${BASE}${path}`);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -7,15 +12,16 @@ async function get(path) {
 }
 
 async function post(path) {
-  const res = await fetch(`${BASE}${path}`, { method: 'POST' });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  const res = await fetch(`${BASE}${path}`, { method: 'POST', headers: WRITE_HEADERS });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
+  return data;
 }
 
 async function postJson(path, body) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_WRITE_HEADERS,
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
@@ -24,7 +30,7 @@ async function postJson(path, body) {
 }
 
 async function del(path) {
-  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' });
+  const res = await fetch(`${BASE}${path}`, { method: 'DELETE', headers: WRITE_HEADERS });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
   return data;
@@ -33,7 +39,7 @@ async function del(path) {
 async function patchJson(path, body) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_WRITE_HEADERS,
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));

@@ -1,8 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router';
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { api } from '../api.js';
 import FundamentalsPanel from './FundamentalsPanel.jsx';
+
+// Headline links come from third-party RSS feeds. Only absolute http(s) URLs become links;
+// a `javascript:` or `data:` URL (which React 18 would still render) is shown as plain text.
+function safeHref(raw) {
+  try {
+    const u = new URL(String(raw));
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : null;
+  } catch {
+    return null;
+  }
+}
 
 function fmtNum(n, digits = 2) {
   if (n == null || isNaN(n)) return '–';
@@ -328,7 +339,9 @@ export default function InstrumentDetail() {
                   <span style={{ width: 30, color: h.score > 0 ? 'var(--green)' : h.score < 0 ? 'var(--red)' : 'var(--text-dim)', fontVariantNumeric: 'tabular-nums', fontSize: 11 }}>
                     {h.score > 0 ? '+' : ''}{h.score.toFixed(2)}
                   </span>
-                  <a href={h.link} target="_blank" rel="noreferrer">{h.title}</a>
+                  {safeHref(h.link)
+                    ? <a href={safeHref(h.link)} target="_blank" rel="noopener noreferrer">{h.title}</a>
+                    : <span>{h.title}</span>}
                 </li>
               ))}
             </ul>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router';
 import { api } from '../api.js';
 import { useLiveQuotes } from '../useLiveQuotes.js';
 import MptPanel from './MptPanel.jsx';
