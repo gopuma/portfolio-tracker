@@ -3,6 +3,7 @@ import { getInstrument, getAllInstruments } from '../db.js';
 import { fetchAndStorePrices } from '../services/priceDispatcher.js';
 import { fetchAndStoreSentiment } from '../services/sentimentService.js';
 import { predictAndStore } from '../services/prediction.js';
+import { runExclusive } from '../security.js';
 
 export const refreshRouter = express.Router();
 
@@ -32,7 +33,7 @@ refreshRouter.post('/:symbol', async (req, res, next) => {
     const inst = await getInstrument(req.params.symbol);
     if (!inst) return res.status(404).json({ error: 'Not found' });
     const days = parseDays(req.query.days);
-    res.json(await refreshOne(inst, days));
+    await runExclusive(`refresh:${inst.symbol}`, res, async () => res.json(await refreshOne(inst, days)));
   } catch (e) { next(e); }
 });
 
@@ -42,11 +43,15 @@ refreshRouter.post('/:symbol', async (req, res, next) => {
 refreshRouter.post('/', async (req, res, next) => {
   try {
     const days = parseDays(req.query.days);
-    const all = await getAllInstruments();
-    const results = [];
-    for (const inst of all) {
-      results.push(await refreshOne(inst, days));
-    }
-    res.json({ count: results.length, days, results });
+    // One full refresh at a time: each walks every ticker against Yahoo/RSS, so stacking
+    // them only multiplies the load and the rate-limit risk.
+    await runExclusive('refresh:all', res, async () => {
+      const all = await getAllInstruments();
+      const results = [];
+      for (const inst of all) {
+        results.push(await refreshOne(inst, days));
+      }
+      res.json({ count: results.length, days, results });
+    });
   } catch (e) { next(e); }
 });

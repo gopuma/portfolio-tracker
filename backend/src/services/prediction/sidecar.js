@@ -6,7 +6,7 @@
  * only on data at-or-before that index. If the sidecar is unreachable, the backend
  * simply skips the boosting models — the rest of the competition keeps working.
  */
-const BASE = process.env.ML_SIDECAR_URL || 'http://localhost:8008';
+const BASE = process.env.ML_SIDECAR_URL || 'http://127.0.0.1:8008';
 
 /** Is the sidecar up? Used to decide whether to attempt the boosting models. */
 export async function sidecarHealthy() {

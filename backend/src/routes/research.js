@@ -19,7 +19,7 @@ const MONEY_COLS = [
 ];
 const STMT_COLS = [...MONEY_COLS, 'eps_diluted', 'shares'];
 
-const ML_SIDECAR_URL = process.env.ML_SIDECAR_URL || 'http://localhost:8008';
+const ML_SIDECAR_URL = process.env.ML_SIDECAR_URL || 'http://127.0.0.1:8008';
 
 // In-memory cache for the estimates/valuation payload (one quoteSummary call), 1-day TTL.
 const estCache = new Map(); // symbol -> { at, data }
