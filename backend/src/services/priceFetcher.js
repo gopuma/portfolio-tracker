@@ -3,7 +3,7 @@
  * Uses yahoo-finance2.
  */
 import YahooFinance from 'yahoo-finance2';
-import { pool } from '../db.js';
+import { query } from '../db.js';
 
 const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
@@ -111,48 +111,89 @@ export async function fetchQuotes(symbols) {
   }
 }
 
+// en-CA formats as YYYY-MM-DD. Formatters are cached per timezone — building one is slow.
+const dateFormatters = new Map();
+function formatterFor(timeZone) {
+  if (!dateFormatters.has(timeZone)) {
+    dateFormatters.set(timeZone, new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }));
+  }
+  return dateFormatters.get(timeZone);
+}
+
+/**
+ * Turn Yahoo daily quotes into one row per trading date.
+ *
+ * A bar's timestamp is its session start, and the session's date must be read in the
+ * EXCHANGE's timezone, not UTC. Most listings are unaffected (a New York bar opens 13:30
+ * UTC, a Seoul bar 00:00 UTC), but Yahoo's FX pairs (KRW=X, JPYKRW=X) are pinned to
+ * London midnight — 23:00 UTC the previous day during British Summer Time — so a UTC
+ * reading filed every summer bar one day early, including onto Sundays.
+ *
+ * Bars without a close are dropped. If two bars land on the same date (a finished session
+ * plus Yahoo's in-progress one), the later wins.
+ */
+export function quotesToBars(quotes, timeZone) {
+  let fmt;
+  try { fmt = formatterFor(timeZone || 'UTC'); } catch { fmt = formatterFor('UTC'); } // unknown tz name
+  const byDate = new Map();
+  for (const q of quotes || []) {
+    if (!q || q.close == null || q.date == null) continue;
+    const d = new Date(q.date);
+    if (Number.isNaN(d.getTime())) continue;
+    byDate.set(fmt.format(d), q);
+  }
+  return [...byDate.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([trade_date, q]) => ({
+      trade_date,
+      open_px: q.open ?? null, high_px: q.high ?? null, low_px: q.low ?? null,
+      close_px: q.close, volume: q.volume ?? null,
+    }));
+}
+
+/** Fetch `days` of daily bars for a symbol from Yahoo, dated in the exchange's timezone. Stores nothing. */
+export async function fetchDailyBars(symbol, days = 365) {
+  const period2 = new Date();
+  const period1 = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  await sleep(YF_CALL_DELAY_MS);
+  const result = await chartWithRetry(symbol, { period1, period2, interval: '1d' });
+  return {
+    timeZone: result?.meta?.exchangeTimezoneName || 'UTC',
+    bars: quotesToBars(result?.quotes, result?.meta?.exchangeTimezoneName),
+  };
+}
+
+/** Upsert bars for one instrument. `q` is a query executor (the pool's, or a transaction's). */
+export async function storeBars(q, instrumentId, bars) {
+  let written = 0;
+  for (const b of bars) {
+    const r = await q(
+      `INSERT INTO prices (instrument_id, trade_date, open_px, high_px, low_px, close_px, volume)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         open_px=VALUES(open_px), high_px=VALUES(high_px),
+         low_px=VALUES(low_px), close_px=VALUES(close_px), volume=VALUES(volume)`,
+      [instrumentId, b.trade_date, b.open_px, b.high_px, b.low_px, b.close_px, b.volume]
+    );
+    if (r.affectedRows > 0) written++;
+  }
+  return written;
+}
+
 /**
  * @param {{id:number, symbol:string}} instrument
  * @param {number} days  How many days back to fetch
  */
 export async function fetchAndStorePrices(instrument, days = 365) {
-  const period2 = new Date();
-  const period1 = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-
-  await sleep(YF_CALL_DELAY_MS);
-  const result = await chartWithRetry(instrument.symbol, {
-    period1, period2,
-    interval: '1d',
-  });
-
-  const quotes = (result?.quotes || []).filter(q => q && q.close != null);
-  if (quotes.length === 0) {
+  const { bars } = await fetchDailyBars(instrument.symbol, days);
+  if (bars.length === 0) {
     return { symbol: instrument.symbol, inserted: 0, note: 'No quotes returned' };
   }
-
-  const conn = await pool.getConnection();
-  let inserted = 0;
-  try {
-    for (const q of quotes) {
-      const d = new Date(q.date);
-      const trade_date = d.toISOString().slice(0, 10);
-      const [r] = await conn.execute(
-        `INSERT INTO prices (instrument_id, trade_date, open_px, high_px, low_px, close_px, volume)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-           open_px=VALUES(open_px), high_px=VALUES(high_px),
-           low_px=VALUES(low_px), close_px=VALUES(close_px), volume=VALUES(volume)`,
-        [instrument.id, trade_date, q.open ?? null, q.high ?? null, q.low ?? null, q.close, q.volume ?? null]
-      );
-      if (r.affectedRows > 0) inserted++;
-    }
-  } finally {
-    conn.release();
-  }
+  const inserted = await storeBars(query, instrument.id, bars);
   return {
     symbol: instrument.symbol,
-    fetched: quotes.length,
+    fetched: bars.length,
     inserted_or_updated: inserted,
-    latest: quotes[quotes.length - 1].close,
+    latest: bars[bars.length - 1].close_px,
   };
 }
