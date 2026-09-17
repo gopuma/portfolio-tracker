@@ -21,6 +21,28 @@ export async function query(sql, params = []) {
   return rows;
 }
 
+/**
+ * Run `fn(q)` inside one database transaction, where `q(sql, params)` has the same shape
+ * as `query` but runs on the transaction's connection. Commits when `fn` resolves, rolls
+ * back when it throws (the error is re-thrown), so a multi-step write lands whole or not
+ * at all.
+ */
+export async function withTransaction(fn) {
+  const conn = await pool.getConnection();
+  const q = async (sql, params = []) => (await conn.execute(sql, params))[0];
+  try {
+    await conn.beginTransaction();
+    const result = await fn(q);
+    await conn.commit();
+    return result;
+  } catch (e) {
+    try { await conn.rollback(); } catch { /* connection already broken; release below */ }
+    throw e;
+  } finally {
+    conn.release();
+  }
+}
+
 export async function getInstrument(symbol) {
   const rows = await query('SELECT * FROM instruments WHERE symbol = ?', [symbol]);
   return rows[0] || null;

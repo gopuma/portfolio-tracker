@@ -15,8 +15,10 @@ import { query } from '../db.js';
 const EPS = 1e-9;
 const isCashSide = side => side === 'deposit' || side === 'withdraw';
 
-export async function loadTransactions(portfolioId) {
-  return query(
+// Every DB helper takes an optional executor `q` (defaults to the pool) so a route can run
+// the ledger write and the re-derive on one transaction's connection — see withTransaction.
+export async function loadTransactions(portfolioId, q = query) {
+  return q(
     `SELECT id, symbol, account, side, shares, price, currency,
             DATE_FORMAT(trade_date,'%Y-%m-%d') AS trade_date
        FROM transactions WHERE portfolio_id = ? ORDER BY trade_date ASC, id ASC`,
@@ -85,8 +87,8 @@ export function deriveState(txns) {
  * Re-derive the `portfolio_holdings` cache from the ledger (called after any transaction
  * write). Existing reads (computePortfolio, analytics, MPT) keep working off this cache.
  */
-export async function rederivePortfolioHoldings(portfolioId) {
-  const txns = await loadTransactions(portfolioId);
+export async function rederivePortfolioHoldings(portfolioId, q = query) {
+  const txns = await loadTransactions(portfolioId, q);
   const { holdings, cashLots } = deriveState(txns);
   const all = [...holdings, ...cashLots];
 
@@ -94,7 +96,7 @@ export async function rederivePortfolioHoldings(portfolioId) {
   // (a DELETE+INSERT would churn ids and break the Holdings-table edit/remove, which
   // references holdings by id).
   for (const h of all) {
-    await query(
+    await q(
       `INSERT INTO portfolio_holdings (portfolio_id, symbol, account, shares, cost_price, currency)
        VALUES (?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE shares = VALUES(shares), cost_price = VALUES(cost_price), currency = VALUES(currency)`,
@@ -103,13 +105,33 @@ export async function rederivePortfolioHoldings(portfolioId) {
   }
   // Drop lots that no longer exist (fully sold / withdrawn).
   const keep = new Set(all.map(h => `${h.symbol}|${h.account}`));
-  const existing = await query(`SELECT id, symbol, account FROM portfolio_holdings WHERE portfolio_id = ?`, [portfolioId]);
+  const existing = await q(`SELECT id, symbol, account FROM portfolio_holdings WHERE portfolio_id = ?`, [portfolioId]);
   for (const e of existing) {
     if (!keep.has(`${e.symbol}|${e.account || ''}`)) {
-      await query(`DELETE FROM portfolio_holdings WHERE id = ?`, [e.id]);
+      await q(`DELETE FROM portfolio_holdings WHERE id = ?`, [e.id]);
     }
   }
-  return { holdings, cashLots };
+  return { holdings, cashLots, txns };
+}
+
+/**
+ * First point in the ledger's history where a securities lot holds negative shares, or
+ * null. Walks in trade order (txns ordered by trade_date, id), so it catches more than a
+ * negative end balance: deleting an early buy, or back-dating a sell ahead of the buy
+ * that funds it, leaves a lot short for a stretch even when the final count is fine.
+ * Cash is exempt — a negative balance there is allowed (margin) and only warned about.
+ * Returns { symbol, account, trade_date, shares }.
+ */
+export function findOversell(txns) {
+  const running = new Map();
+  for (const t of txns) {
+    if (isCashSide(t.side)) continue;
+    const k = `${t.symbol}|${t.account || ''}`;
+    const next = (running.get(k) || 0) + (t.side === 'buy' ? 1 : -1) * Number(t.shares);
+    running.set(k, next);
+    if (next < -EPS) return { symbol: t.symbol, account: t.account || '', trade_date: t.trade_date, shares: next };
+  }
+  return null;
 }
 
 /**
