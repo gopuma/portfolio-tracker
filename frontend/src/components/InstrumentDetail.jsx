@@ -24,14 +24,16 @@ function fmtPct(n, digits = 2) {
   return `${(Number(n) * 100).toFixed(digits)}%`;
 }
 
-// Price-chart period presets (history caps at 1825 days / 5y).
+// Price-chart period presets. The days box accepts up to MAX_DAYS, which matches the
+// server's MAX_PRICE_DAYS (routes/prices.js); 'Max' asks for all of it.
+const MAX_DAYS = 20000;
 const PRESETS = [
   { label: '6M', days: 180 },
   { label: '1Y', days: 365 },
   { label: '3Y', days: 1095 },
   { label: '5Y', days: 1825 },
+  { label: 'Max', days: MAX_DAYS },
 ];
-const MAX_DAYS = 1825;
 
 // Indicator periods exposed as buttons for EMA and the exponential Bollinger Band.
 const INDICATOR_PERIODS = [20, 50, 200];
@@ -198,7 +200,7 @@ export default function InstrumentDetail() {
 
       <div className="panel">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
-          <h2 style={{ margin: 0 }}>Price ({days} days)</h2>
+          <h2 style={{ margin: 0 }}>Price ({days === MAX_DAYS ? 'all history' : `${days} days`})</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {PRESETS.map(p => (
               <button
