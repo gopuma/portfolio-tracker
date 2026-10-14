@@ -98,7 +98,10 @@ export async function fetchEstimates(symbol) {
     currency,
     consensus,
     valuation: {
-      trailing_pe: num(sd.trailingPE ?? ks.trailingEps),
+      // No fallback to ks.trailingEps here: that field is earnings per share, not a
+      // ratio, so using it when trailingPE is absent silently files an EPS (~8) as if
+      // it were a P/E (~35). Our own derived PER in fundamentalRatios.js covers the gap.
+      trailing_pe: num(sd.trailingPE),
       forward_pe: num(sd.forwardPE ?? ks.forwardPE),
       ps: num(sd.priceToSalesTrailing12Months),
       market_cap: num(price.marketCap ?? sd.marketCap),

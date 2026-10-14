@@ -10,7 +10,13 @@ import { pool } from '../db.js';
 const NAVER_URL = 'https://finance.naver.com/marketindex/goldDailyQuote.naver';
 const NAVER_LIVE_URL = 'https://api.stock.naver.com/marketindex/metals/CMDT_GD';
 const PAGE_DELAY_MS = Number(process.env.NAVER_PAGE_DELAY_MS || 800);
-const MAX_PAGES_CAP = 40;
+// Safety stop on paging, not a history limit: pages are only requested as far back as the
+// caller's `days` asks for, and the walk also stops as soon as a page adds nothing new.
+// 120 pages ≈ 1200 trading days, enough for a multi-year backfill; the daily job asks for
+// a handful of pages and never gets near it.
+const MAX_PAGES_CAP = Number(process.env.NAVER_MAX_PAGES || 120);
+// A hung Naver response must not stall the request or the nightly job indefinitely.
+const FETCH_TIMEOUT_MS = 15_000;
 
 /**
  * Live KRX gold spot from Naver's mobile API. Returns realtime tick during KRX hours,
@@ -18,6 +24,7 @@ const MAX_PAGES_CAP = 40;
  */
 export async function fetchLiveKrxGold() {
   const res = await fetch(NAVER_LIVE_URL, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     headers: { 'User-Agent': 'Mozilla/5.0 (portfolio-tracker krxGoldFetcher)' },
   });
   if (!res.ok) throw new Error(`Naver metals API HTTP ${res.status}`);
@@ -41,6 +48,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchPage(page) {
   const res = await fetch(`${NAVER_URL}?page=${page}`, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     headers: { 'User-Agent': 'Mozilla/5.0 (portfolio-tracker krxGoldFetcher)' },
   });
   if (!res.ok) throw new Error(`Naver page ${page} HTTP ${res.status}`);

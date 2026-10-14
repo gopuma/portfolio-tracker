@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { api } from '../api.js';
 import AddTicker from './AddTicker.jsx';
 import MptPanel from './MptPanel.jsx';

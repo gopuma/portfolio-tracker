@@ -6,6 +6,7 @@ import express from 'express';
 import { query, getInstrument } from '../db.js';
 import { backfill } from '../services/competition/harness.js';
 import { leaderboardForSymbol } from '../services/competition/store.js';
+import { runExclusive } from '../security.js';
 
 export const competitionRouter = express.Router();
 
@@ -124,7 +125,10 @@ competitionRouter.post('/backtest', async (req, res, next) => {
   try {
     const window = Math.min(Math.max(Number(req.body?.window) || 180, 20), 1000);
     const mcPaths = Math.min(Math.max(Number(req.body?.mcPaths) || 2000, 200), 20000);
-    const result = await backfill({ window, mcPaths });
-    res.json({ ok: true, window, mcPaths, ...result });
+    // Minutes of CPU per run; a second concurrent run would only fight the first.
+    await runExclusive('backtest', res, async () => {
+      const result = await backfill({ window, mcPaths });
+      res.json({ ok: true, window, mcPaths, ...result });
+    });
   } catch (e) { next(e); }
 });

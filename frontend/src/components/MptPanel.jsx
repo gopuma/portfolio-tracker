@@ -55,7 +55,8 @@ export default function MptPanel({ symbols, currentWeights, title = 'Optimal Por
     <div className="panel" style={{ marginTop: 12, marginBottom: 4, background: 'var(--panel-2)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <h3 style={{ margin: 0 }}>{title}</h3>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {/* Stays right-aligned when the row wraps under the heading. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginLeft: 'auto', justifyContent: 'flex-end' }}>
           {PRESETS.map(p => (
             <button key={p.label} className={`btn ${days === p.days ? '' : 'ghost'}`} onClick={() => setDays(p.days)}>{p.label}</button>
           ))}

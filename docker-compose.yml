@@ -10,8 +10,10 @@ services:
       MYSQL_DATABASE: ${DB_NAME:-portfolio}
       MYSQL_USER: ${DB_USER:-portfolio}
       MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required — set it in .env}
+    # Loopback only: without the 127.0.0.1 prefix Docker publishes on every interface, and
+    # MySQL's users accept connections from any host ('%').
     ports:
-      - "${DB_PORT:-3306}:3306"
+      - "127.0.0.1:${DB_PORT:-3306}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -28,7 +30,7 @@ services:
     container_name: portfolio-ml-sidecar
     restart: unless-stopped
     ports:
-      - "${ML_SIDECAR_PORT:-8008}:8000"
+      - "127.0.0.1:${ML_SIDECAR_PORT:-8008}:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8000/health').status==200 else sys.exit(1)"]
       interval: 15s

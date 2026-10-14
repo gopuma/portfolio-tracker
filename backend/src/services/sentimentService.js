@@ -8,6 +8,7 @@
  */
 import Parser from 'rss-parser';
 import { pool } from '../db.js';
+import { safeHttpUrl } from '../security.js';
 
 const parser = new Parser({ timeout: 10_000 });
 
@@ -53,7 +54,7 @@ function feedsFor(symbol) {
   const yfTicker = isKR ? symbol : symbol.toUpperCase();
   const q = encodeURIComponent(isKR ? symbol : `${symbol} stock`);
   return [
-    `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${yfTicker}&region=US&lang=en-US`,
+    `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(yfTicker)}&region=US&lang=en-US`,
     `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`,
   ];
 }
@@ -71,7 +72,8 @@ export async function fetchAndStoreSentiment(instrument) {
 
   const scored = recent.map(it => ({
     title: it.title || '',
-    link: it.link || '',
+    // Feed content is untrusted: keep only absolute http(s) links, never javascript:/data:.
+    link: safeHttpUrl(it.link),
     pubDate: it.isoDate || it.pubDate || null,
     score: scoreHeadline(it.title || ''),
   }));

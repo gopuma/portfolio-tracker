@@ -11,7 +11,7 @@ from statistics import median
 from typing import List, Dict, Any, Optional
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from models import forecast
 
@@ -40,12 +40,21 @@ def _next_quarter(series: List[Optional[float]]) -> Optional[float]:
     return last
 
 
+# Size limits keep one request from pinning the CPU or memory: training runs once per
+# as-of index, so an unbounded list is an unbounded job. They sit well above real use —
+# ~11 years of daily closes, a 1000-point backtest window, 5/30-day horizons.
+MAX_CLOSES = 20_000
+MAX_AS_OF = 2_000
+MAX_HORIZON = 365
+MAX_QUARTERS = 400
+
+
 class ForecastRequest(BaseModel):
-    model: str
-    horizon: int
-    closes: List[float]
-    as_of: List[int]
-    config: Dict[str, Any] = {}
+    model: str = Field(max_length=32)
+    horizon: int = Field(gt=0, le=MAX_HORIZON)
+    closes: List[float] = Field(min_length=1, max_length=MAX_CLOSES)
+    as_of: List[int] = Field(max_length=MAX_AS_OF)
+    config: Dict[str, Any] = Field(default_factory=dict, max_length=32)
 
 
 @app.get("/health")
@@ -67,8 +76,8 @@ def do_forecast(req: ForecastRequest):
 
 class FundamentalsRequest(BaseModel):
     # Quarterly series in the company's native currency, oldest → newest.
-    revenue: List[Optional[float]] = []
-    eps: List[Optional[float]] = []
+    revenue: List[Optional[float]] = Field(default_factory=list, max_length=MAX_QUARTERS)
+    eps: List[Optional[float]] = Field(default_factory=list, max_length=MAX_QUARTERS)
 
 
 @app.post("/fundamentals/forecast")

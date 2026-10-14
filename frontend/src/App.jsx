@@ -1,4 +1,4 @@
-import { NavLink, Route, Routes } from 'react-router-dom';
+import { NavLink, Route, Routes } from 'react-router';
 import PortfolioOverview from './components/PortfolioOverview.jsx';
 import InstrumentDetail from './components/InstrumentDetail.jsx';
 import PortfolioList from './components/PortfolioList.jsx';

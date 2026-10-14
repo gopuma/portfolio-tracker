@@ -1,7 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router';
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { api } from '../api.js';
+import FundamentalsPanel from './FundamentalsPanel.jsx';
+
+// Headline links come from third-party RSS feeds. Only absolute http(s) URLs become links;
+// a `javascript:` or `data:` URL (which React 18 would still render) is shown as plain text.
+function safeHref(raw) {
+  try {
+    const u = new URL(String(raw));
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : null;
+  } catch {
+    return null;
+  }
+}
 
 function fmtNum(n, digits = 2) {
   if (n == null || isNaN(n)) return '–';
@@ -12,14 +24,16 @@ function fmtPct(n, digits = 2) {
   return `${(Number(n) * 100).toFixed(digits)}%`;
 }
 
-// Price-chart period presets (history caps at 1825 days / 5y).
+// Price-chart period presets. The days box accepts up to MAX_DAYS, which matches the
+// server's MAX_PRICE_DAYS (routes/prices.js); 'Max' asks for all of it.
+const MAX_DAYS = 20000;
 const PRESETS = [
   { label: '6M', days: 180 },
   { label: '1Y', days: 365 },
   { label: '3Y', days: 1095 },
   { label: '5Y', days: 1825 },
+  { label: 'Max', days: MAX_DAYS },
 ];
-const MAX_DAYS = 1825;
 
 // Indicator periods exposed as buttons for EMA and the exponential Bollinger Band.
 const INDICATOR_PERIODS = [20, 50, 200];
@@ -186,7 +200,7 @@ export default function InstrumentDetail() {
 
       <div className="panel">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
-          <h2 style={{ margin: 0 }}>Price ({days} days)</h2>
+          <h2 style={{ margin: 0 }}>Price ({days === MAX_DAYS ? 'all history' : `${days} days`})</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {PRESETS.map(p => (
               <button
@@ -297,6 +311,8 @@ export default function InstrumentDetail() {
 
       <RiskPanel stats={stats} days={days} rf={rf} setRf={setRf} />
 
+      <FundamentalsPanel symbol={symbol} />
+
       <div className="grid-2">
         <div className="panel">
           <h2>Prediction Factors</h2>
@@ -325,7 +341,9 @@ export default function InstrumentDetail() {
                   <span style={{ width: 30, color: h.score > 0 ? 'var(--green)' : h.score < 0 ? 'var(--red)' : 'var(--text-dim)', fontVariantNumeric: 'tabular-nums', fontSize: 11 }}>
                     {h.score > 0 ? '+' : ''}{h.score.toFixed(2)}
                   </span>
-                  <a href={h.link} target="_blank" rel="noreferrer">{h.title}</a>
+                  {safeHref(h.link)
+                    ? <a href={safeHref(h.link)} target="_blank" rel="noopener noreferrer">{h.title}</a>
+                    : <span>{h.title}</span>}
                 </li>
               ))}
             </ul>

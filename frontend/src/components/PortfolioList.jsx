@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router';
 import { api } from '../api.js';
 
 function fmtMoney(n, ccy) {
@@ -110,7 +110,7 @@ export default function PortfolioList() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <h2 style={{ margin: 0 }}>My Portfolios</h2>
           {creating ? (
-            <form onSubmit={create} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <form onSubmit={create} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto', justifyContent: 'flex-end' }}>
               <input
                 autoFocus value={name} onChange={e => setName(e.target.value)}
                 placeholder="Portfolio name" disabled={busy}
@@ -120,14 +120,14 @@ export default function PortfolioList() {
               <button className="btn ghost" type="button" onClick={() => { setCreating(false); setName(''); }} disabled={busy}>Cancel</button>
             </form>
           ) : removeMode ? (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto', justifyContent: 'flex-end' }}>
               <button className="btn" onClick={removeSelected} disabled={selected.size === 0} style={{ background: 'var(--red)' }}>
                 Remove selected ({selected.size})
               </button>
               <button className="btn ghost" onClick={exitRemoveMode}>Cancel</button>
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto', justifyContent: 'flex-end' }}>
               <button className="btn" onClick={() => setCreating(true)}>+ New portfolio</button>
               {hasPortfolios && (
                 <button className="btn ghost" onClick={() => setRemoveMode(true)} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}>

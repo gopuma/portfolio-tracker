@@ -220,9 +220,14 @@ those two models — the other seven competitors and the whole app keep working.
 
 ## 12. Automatic daily updates
 
-When the backend is running, a cron job (default **23:00 KST, Mon–Fri**, see
+When the backend is running, a cron job (default **06:30 KST, Tue–Sat**, see
 `CRON_DAILY_REFRESH`) refreshes prices + sentiment, runs all models' predictions, scores
 matured ones, and refreshes the leaderboard. It only fires while the backend process is up.
+
+The schedule sits after the US close in both DST regimes (16:00 ET = 05:00 KST on EDT,
+06:00 KST on EST) so each run stores settled closes. Running during the US session would
+store a partial bar for the day in progress; it self-corrects on a later run only because
+each refresh re-fetches a 7-day window and upserts.
 
 ---
 

@@ -12,5 +12,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Run unprivileged: the service only reads its own code and never writes to disk.
+RUN useradd --create-home --uid 10001 app
+USER app
+
 EXPOSE 8000
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

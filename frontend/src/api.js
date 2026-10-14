@@ -1,5 +1,10 @@
 const BASE = import.meta.env.VITE_API_BASE || '/api';
 
+// The backend refuses state-changing requests without this header (backend/src/security.js):
+// a hostile web page can't attach it without a CORS preflight, which only this app passes.
+const WRITE_HEADERS = { 'X-Requested-With': 'portfolio-tracker' };
+const JSON_WRITE_HEADERS = { ...WRITE_HEADERS, 'Content-Type': 'application/json' };
+
 async function get(path) {
   const res = await fetch(`${BASE}${path}`);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -7,15 +12,16 @@ async function get(path) {
 }
 
 async function post(path) {
-  const res = await fetch(`${BASE}${path}`, { method: 'POST' });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  const res = await fetch(`${BASE}${path}`, { method: 'POST', headers: WRITE_HEADERS });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
+  return data;
 }
 
 async function postJson(path, body) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_WRITE_HEADERS,
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
@@ -24,7 +30,7 @@ async function postJson(path, body) {
 }
 
 async function del(path) {
-  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' });
+  const res = await fetch(`${BASE}${path}`, { method: 'DELETE', headers: WRITE_HEADERS });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
   return data;
@@ -33,7 +39,7 @@ async function del(path) {
 async function patchJson(path, body) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_WRITE_HEADERS,
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
@@ -68,13 +74,23 @@ export const api = {
   optimize:     (symbols, days = 365, rf = 0) => postJson(`/analytics/optimize`, { symbols, days, rf }),
   audit:        (live = false)           => get(`/audit${live ? '?live=1' : ''}`),
   research:     (symbol, currency = 'native') => get(`/research/${encodeURIComponent(symbol)}?currency=${encodeURIComponent(currency)}`),
+  ratios:       (symbol)                 => get(`/research/${encodeURIComponent(symbol)}/ratios`),
 
   // Portfolios
   searchSymbols: (q, market)             => get(`/instruments/search?q=${encodeURIComponent(q)}${market ? `&market=${encodeURIComponent(market)}` : ''}`),
   lookup:        (symbol)                => get(`/instruments/lookup?symbol=${encodeURIComponent(symbol)}`),
   portfolios:    ()                      => get(`/portfolios`),
   portfolioById: (id)                    => get(`/portfolios/${id}`),
-  portfolioValueHistory: (id, granularity) => get(`/portfolios/${id}/value-history${granularity === 'daily' ? '?granularity=daily' : ''}`),
+  // backfillFrom ('YYYY-MM-DD') prepends hypothetical periods from that date to the first
+  // recorded trade, holding the opening position constant. Read-only: nothing is stored.
+  portfolioValueHistory: (id, granularity, currency, backfillFrom, includeCash) => {
+    const qs = [];
+    if (granularity === 'daily') qs.push('granularity=daily');
+    if (currency) qs.push(`currency=${encodeURIComponent(currency)}`);
+    if (backfillFrom) qs.push(`backfill_from=${encodeURIComponent(backfillFrom)}`);
+    if (includeCash) qs.push('include_cash=1');
+    return get(`/portfolios/${id}/value-history${qs.length ? `?${qs.join('&')}` : ''}`);
+  },
   portfolioAnalytics: (id, days = 365, rf = 0) => get(`/portfolios/${id}/analytics?days=${days}&rf=${rf}`),
   createPortfolio: (body)                => postJson(`/portfolios`, body),
   renamePortfolio: (id, name)            => patchJson(`/portfolios/${id}`, { name }),
@@ -85,6 +101,7 @@ export const api = {
   removeHolding: (id, holdingId)         => del(`/portfolios/${id}/holdings/${holdingId}`),
   transactions:  (id)                    => get(`/portfolios/${id}/transactions`),
   addTransaction: (id, body)             => postJson(`/portfolios/${id}/transactions`, body),
+  updateTransaction: (id, txId, body)    => patchJson(`/portfolios/${id}/transactions/${txId}`, body),
   deleteTransaction: (id, txId)          => del(`/portfolios/${id}/transactions/${txId}`),
 
   // Prediction competition
