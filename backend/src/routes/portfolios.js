@@ -63,7 +63,7 @@ const getKrwPerUsd = () => getFxRate('KRW=X');
 const getKrwPerJpy = () => getFxRate('JPYKRW=X');
 
 /** Both rates at once, in the shape `convert` expects. */
-async function getFxRates() {
+export async function getFxRates() {
   const [krwPerUsd, krwPerJpy] = await Promise.all([getKrwPerUsd(), getKrwPerJpy()]);
   return { krwPerUsd, krwPerJpy };
 }
@@ -106,7 +106,7 @@ function convert(amount, currency, base, rates) {
 }
 
 // Holdings with latest + historical closes for one portfolio.
-async function loadHoldings(portfolioId) {
+export async function loadHoldings(portfolioId) {
   return query(
     `SELECT h.id, h.symbol, h.account, h.shares, h.cost_price, h.currency,
             i.id AS instrument_id, i.display_name,

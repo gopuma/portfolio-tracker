@@ -6,6 +6,7 @@ import PortfolioDetail from './components/PortfolioDetail.jsx';
 import PredictionsPage from './components/PredictionsPage.jsx';
 import AuditPage from './components/AuditPage.jsx';
 import Research from './components/Research.jsx';
+import StressTest from './components/StressTest.jsx';
 
 export default function App() {
   const linkClass = ({ isActive }) => (isActive ? 'active' : '');
@@ -19,6 +20,9 @@ export default function App() {
           </NavLink>
           <NavLink to="/portfolios" className={linkClass}>
             Portfolios
+          </NavLink>
+          <NavLink to="/stress" className={linkClass}>
+            Stress Test
           </NavLink>
           <NavLink to="/research" className={linkClass}>
             Research
@@ -37,6 +41,7 @@ export default function App() {
         <Route path="/instruments/:symbol" element={<InstrumentDetail />} />
         <Route path="/portfolios" element={<PortfolioList />} />
         <Route path="/portfolios/:id" element={<PortfolioDetail />} />
+        <Route path="/stress" element={<StressTest />} />
         <Route path="/research" element={<Research />} />
         <Route path="/predictions" element={<PredictionsPage />} />
         <Route path="/audit" element={<AuditPage />} />

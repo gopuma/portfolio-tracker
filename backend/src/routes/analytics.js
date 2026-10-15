@@ -15,7 +15,7 @@ const BENCHMARK_NAMES = { '^GSPC': 'S&P 500', '^KS11': 'KOSPI' };
 const clampDays = raw => Math.min(Number(raw || DEFAULT_DAYS), MAX_DAYS);
 
 // Ordered { date, close } series for one instrument over a trailing window.
-async function loadSeries(symbol, days) {
+export async function loadSeries(symbol, days) {
   const rows = await query(
     `SELECT p.trade_date, p.close_px
        FROM instruments i
