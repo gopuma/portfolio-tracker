@@ -116,3 +116,40 @@ export function betaAlpha(assetMap, benchMap, rf = 0) {
   const corr = va > 0 && vb > 0 ? cov / Math.sqrt(va * vb) : null;
   return { beta, alpha, correlation: corr, r2: corr != null ? corr * corr : null, n };
 }
+
+/**
+ * Ordinary least squares of asset returns on benchmark returns (date-keyed maps, aligned
+ * on common keys), with the standard errors the stress test needs:
+ *   beta, alpha (per period), se_beta, resid_sd (per-period residual sd), r2, n.
+ * Unlike betaAlpha() this works on any return frequency and annualizes nothing.
+ */
+export function regress(assetMap, benchMap, minObs = MIN_RETURNS) {
+  const empty = { beta: null, alpha: null, se_beta: null, resid_sd: null, r2: null, n: 0 };
+  if (!assetMap || !benchMap) return empty;
+  const ys = [], xs = [];
+  for (const [k, ra] of assetMap) {
+    const rb = benchMap.get(k);
+    if (rb !== undefined) { ys.push(ra); xs.push(rb); }
+  }
+  const n = xs.length;
+  if (n < minObs) return { ...empty, n };
+  const mx = avg(xs), my = avg(ys);
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - mx, dy = ys[i] - my;
+    sxy += dx * dy; sxx += dx * dx; syy += dy * dy;
+  }
+  if (!(sxx > 0)) return { ...empty, n };
+  const beta = sxy / sxx;
+  const alpha = my - beta * mx;
+  const sse = Math.max(syy - beta * sxy, 0);
+  const s2 = sse / (n - 2);
+  return {
+    beta,
+    alpha,
+    se_beta: Math.sqrt(s2 / sxx),
+    resid_sd: Math.sqrt(s2),
+    r2: syy > 0 ? 1 - sse / syy : null,
+    n,
+  };
+}

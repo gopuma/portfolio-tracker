@@ -92,6 +92,7 @@ export const api = {
     return get(`/portfolios/${id}/value-history${qs.length ? `?${qs.join('&')}` : ''}`);
   },
   portfolioAnalytics: (id, days = 365, rf = 0) => get(`/portfolios/${id}/analytics?days=${days}&rf=${rf}`),
+  stressInputs: (days, usIndex, currency) => get(`/stress?days=${days}&us_index=${encodeURIComponent(usIndex)}&currency=${currency}`),
   createPortfolio: (body)                => postJson(`/portfolios`, body),
   renamePortfolio: (id, name)            => patchJson(`/portfolios/${id}`, { name }),
   deletePortfolio: (id)                  => del(`/portfolios/${id}`),
