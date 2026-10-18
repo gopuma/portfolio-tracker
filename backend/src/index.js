@@ -14,6 +14,7 @@ import { auditRouter } from './routes/audit.js';
 import { competitionRouter } from './routes/competition.js';
 import { researchRouter } from './routes/research.js';
 import { stressRouter } from './routes/stress.js';
+import { projectionRouter } from './routes/projection.js';
 import { startDailyJob } from './jobs/dailyPriceJob.js';
 import { localRequestGuard, securityHeaders, ALLOWED_ORIGINS, CLIENT_HEADER } from './security.js';
 
@@ -45,6 +46,7 @@ app.use('/api/portfolios', portfoliosRouter);
 app.use('/api/audit', auditRouter);
 app.use('/api/research', researchRouter);
 app.use('/api/stress', stressRouter);
+app.use('/api/projection', projectionRouter);
 app.use('/api', competitionRouter); // /api/leaderboard, /api/models, /api/backtest, /api/competition/*
 
 // Error handler. Client errors (4xx — validation, not-found, malformed JSON) carry a

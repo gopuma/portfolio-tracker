@@ -3,6 +3,7 @@ import { query } from '../db.js';
 import { toReturns, regress } from '../services/stats.js';
 import { loadSeries } from './analytics.js';
 import { computePortfolio, loadHoldings, getFxRates } from './portfolios.js';
+import { REPLAY_EVENTS, BASES, replayEvent } from '../services/historicalReplay.js';
 
 export const stressRouter = express.Router();
 
@@ -59,6 +60,34 @@ function forwardFilled(series) {
 }
 
 /**
+ * Every portfolio's priced holdings, valued in `currency` at today's prices and FX.
+ * Returns { portfolios, held } where `held` maps each symbol to its native currency.
+ */
+export async function valuedPortfolios(currency, fx) {
+  const pfRows = await query(`SELECT id, name FROM portfolios ORDER BY id ASC`);
+  const portfolios = [];
+  const held = new Map();
+  for (const p of pfRows) {
+    const { holdings, totals } = computePortfolio(await loadHoldings(p.id), currency, fx);
+    const priced = holdings.filter(h => h.market_value_base != null);
+    for (const h of priced) held.set(h.symbol, h.currency);
+    portfolios.push({
+      id: p.id,
+      name: p.name,
+      total: totals.market_value,
+      holdings: priced.map(h => ({
+        symbol: h.symbol,
+        display_name: h.display_name,
+        is_cash: !!h.is_cash,
+        currency: h.currency,
+        value: h.market_value_base,
+      })),
+    });
+  }
+  return { portfolios, held };
+}
+
+/**
  * Inputs for the market stress test, for every portfolio at once:
  *   - each portfolio's holdings valued in the display currency at today's prices and FX
  *   - each holding's sensitivity to the chosen US index, estimated the way commercial
@@ -83,26 +112,7 @@ stressRouter.get('/', async (req, res, next) => {
     const currency = req.query.currency === 'KRW' ? 'KRW' : 'USD';
 
     const fx = await getFxRates();
-    const pfRows = await query(`SELECT id, name FROM portfolios ORDER BY id ASC`);
-    const portfolios = [];
-    const held = new Map(); // symbol -> native currency
-    for (const p of pfRows) {
-      const { holdings, totals } = computePortfolio(await loadHoldings(p.id), currency, fx);
-      const priced = holdings.filter(h => h.market_value_base != null);
-      for (const h of priced) held.set(h.symbol, h.currency);
-      portfolios.push({
-        id: p.id,
-        name: p.name,
-        total: totals.market_value,
-        holdings: priced.map(h => ({
-          symbol: h.symbol,
-          display_name: h.display_name,
-          is_cash: !!h.is_cash,
-          currency: h.currency,
-          value: h.market_value_base,
-        })),
-      });
-    }
+    const { portfolios, held } = await valuedPortfolios(currency, fx);
 
     // Daily FX for restating every price in the display currency.
     const [usdFx, jpyFx] = await Promise.all([loadSeries('KRW=X', days + 14), loadSeries('JPYKRW=X', days + 14)]);
@@ -182,5 +192,50 @@ stressRouter.get('/', async (req, res, next) => {
       factors,
       portfolios,
     });
+  } catch (e) { next(e); }
+});
+
+/**
+ * The portfolios the replay engine can run, and its per-symbol market/currency lookup:
+ * empty portfolios are dropped, and so is any holding missing from `instruments`.
+ */
+export async function replayable(portfolios, held) {
+  const symbols = [...held.keys()].filter(s => !s.startsWith('CASH:'));
+  const metaRows = symbols.length === 0 ? [] : await query(
+    `SELECT symbol, market, currency FROM instruments WHERE symbol IN (${symbols.map(() => '?').join(',')})`,
+    symbols
+  );
+  const meta = new Map(metaRows.map(r => [r.symbol, { market: r.market, currency: r.currency }]));
+  const shown = portfolios.filter(p => p.holdings.length > 0 && p.total > 0)
+    .map(p => ({ ...p, holdings: p.holdings.filter(h => h.is_cash || meta.has(h.symbol)) }));
+  return { shown, meta };
+}
+
+/** The past events the historical replay can run. */
+stressRouter.get('/events', (_req, res) => {
+  res.json({ events: REPLAY_EVENTS });
+});
+
+/**
+ * Historical replay of one past event over every portfolio: today's holdings, valued now,
+ * run through what actually happened day by day (see services/historicalReplay.js).
+ * Query params: ?event=<key from /events>, ?currency=USD|KRW, ?basis=factor|actual
+ * (today's sensitivities to each proxy, or a holding's own prices where it has them).
+ *
+ * Returns { event, currency, dates, indexes, won_vs_usd, portfolios: [{ id, name, current,
+ * end_value, end_return, max_drawdown, dd_peak, dd_trough, path, holdings }] }, where
+ * `path` is the portfolio's % change from day one on each of `dates`.
+ */
+stressRouter.get('/replay', async (req, res, next) => {
+  try {
+    const event = REPLAY_EVENTS.find(e => e.key === req.query.event);
+    if (!event) return res.status(400).json({ error: 'Unknown event' });
+    const currency = req.query.currency === 'KRW' ? 'KRW' : 'USD';
+    const basis = BASES.includes(req.query.basis) ? req.query.basis : 'factor';
+
+    const fx = await getFxRates();
+    const { portfolios, held } = await valuedPortfolios(currency, fx);
+    const { shown, meta } = await replayable(portfolios, held);
+    res.json(await replayEvent(event, shown, meta, currency, basis));
   } catch (e) { next(e); }
 });

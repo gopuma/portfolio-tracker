@@ -148,6 +148,9 @@ export function quotesToBars(quotes, timeZone) {
       trade_date,
       open_px: q.open ?? null, high_px: q.high ?? null, low_px: q.low ?? null,
       close_px: q.close, volume: q.volume ?? null,
+      // Split- and dividend-adjusted close. Not stored in `prices`; the historical replay
+      // uses it so a holding's return over a past event includes what it paid out.
+      adj_close: q.adjclose ?? null,
     }));
 }
 
