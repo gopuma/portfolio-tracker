@@ -95,6 +95,7 @@ export const api = {
   stressInputs: (days, usIndex, currency) => get(`/stress?days=${days}&us_index=${encodeURIComponent(usIndex)}&currency=${currency}`),
   stressEvents: ()                      => get(`/stress/events`),
   stressReplay: (event, currency, basis) => get(`/stress/replay?event=${encodeURIComponent(event)}&currency=${currency}&basis=${basis}`),
+  projectionInputs: (currency = 'KRW')  => get(`/projection/inputs?currency=${encodeURIComponent(currency)}`),
   createPortfolio: (body)                => postJson(`/portfolios`, body),
   renamePortfolio: (id, name)            => patchJson(`/portfolios/${id}`, { name }),
   deletePortfolio: (id)                  => del(`/portfolios/${id}`),
