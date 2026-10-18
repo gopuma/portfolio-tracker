@@ -12,6 +12,7 @@
     "backfill": "node scripts/backfill.js",
     "backfill:fx": "node scripts/backfill-fx.js",
     "backfill:prices": "node scripts/backfill-prices.js",
+    "history:load": "node scripts/load-scenario-history.js",
     "backtest": "node scripts/backtest.js",
     "test": "node --test"
   },

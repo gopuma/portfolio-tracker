@@ -93,6 +93,8 @@ export const api = {
   },
   portfolioAnalytics: (id, days = 365, rf = 0) => get(`/portfolios/${id}/analytics?days=${days}&rf=${rf}`),
   stressInputs: (days, usIndex, currency) => get(`/stress?days=${days}&us_index=${encodeURIComponent(usIndex)}&currency=${currency}`),
+  stressEvents: ()                      => get(`/stress/events`),
+  stressReplay: (event, currency, basis) => get(`/stress/replay?event=${encodeURIComponent(event)}&currency=${currency}&basis=${basis}`),
   createPortfolio: (body)                => postJson(`/portfolios`, body),
   renamePortfolio: (id, name)            => patchJson(`/portfolios/${id}`, { name }),
   deletePortfolio: (id)                  => del(`/portfolios/${id}`),

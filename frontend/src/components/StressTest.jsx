@@ -2,43 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, ReferenceLine, Cell, LabelList, ErrorBar } from 'recharts';
 import { api } from '../api.js';
+import {
+  GREEN, RED, DIM, ACCENT, BASELINE, BASELINE_OPACITY, DIMMED_OPACITY, tooltipStyle, inputStyle, dimLabel,
+  fmtPct, fmtNum, fmtMoney, fmtCompact, cls, HoldingPctLabel, PortfolioTick, PortfolioChips,
+} from './stressShared.jsx';
+import HistoricalReplay from './HistoricalReplay.jsx';
 
-const GREEN = '#34d399';
-const RED = '#f87171';
-const DIM = '#9aa0a6';
-// Same roles as the other charts: the accent blue is the series being studied (the price
-// line, the FX line), neutral grey is the reference it's read against (like the value
-// chart's backfill band), and red/green only ever mark direction, on text.
-const ACCENT = '#4a9eff';
-const BASELINE = '#9aa0a6';
-const BASELINE_OPACITY = 0.35;
-const DIMMED_OPACITY = 0.35;
 const WHISKER = '#c9ced6';
-const tooltipStyle = { background: '#1a1f29', border: '1px solid #2d3441', fontSize: 12 };
 
-function fmtPct(n, d = 1) {
-  if (n == null || isNaN(n)) return '–';
-  const s = (Number(n) * 100).toFixed(d);
-  if (Number(s) === 0) return `${(0).toFixed(d)}%`; // no "−0%" for a value that rounds away
-  return `${n > 0 ? '+' : ''}${s}%`;
-}
-function fmtNum(n, d = 2) {
-  if (n == null || isNaN(n)) return '–';
-  return Number(n).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
-}
-function fmtMoney(n, ccy) {
-  if (n == null || isNaN(n)) return '–';
-  const sign = n < 0 ? '−' : '';
-  const sym = ccy === 'KRW' ? '₩' : '$';
-  return `${sign}${sym}${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
-function fmtCompact(n, ccy) {
-  if (n == null || isNaN(n)) return '–';
-  const sym = ccy === 'KRW' ? '₩' : '$';
-  const a = Math.abs(n);
-  const s = a >= 1e9 ? `${(a / 1e9).toFixed(1)}B` : a >= 1e6 ? `${(a / 1e6).toFixed(2)}M` : a >= 1e3 ? `${(a / 1e3).toFixed(0)}K` : a.toFixed(0);
-  return `${n < 0 ? '−' : ''}${sym}${s}`;
-}
 /**
  * One-standard-deviation band for a sum of holdings, as % changes from `current`. The sum's
  * dollar spread `sd` is converted to an equivalent log-normal spread around `stressed`, so
@@ -51,9 +22,6 @@ function bandOf(current, stressed, sd) {
   return { lo: (stressed * Math.exp(-sigma)) / current - 1, hi: (stressed * Math.exp(sigma)) / current - 1 };
 }
 const fmtRange = (lo, hi) => `${fmtPct(lo, 0)} to ${fmtPct(hi, 0)}`;
-const cls = n => (n == null ? '' : n > 0 ? 'up' : n < 0 ? 'down' : '');
-// Text colour by sign; a flat holding (cash) stays neutral rather than reading as a gain.
-const signColor = n => (Math.abs(n) < 5e-4 ? DIM : n < 0 ? RED : GREEN);
 
 // Historical index moves, peak to trough for a crash and trough to peak for a boom, as a
 // signed % change. `days` is the calendar length of the move, which sets how much room
@@ -84,9 +52,6 @@ const LOOKBACKS = [
   { label: '1Y', days: 365 },
   { label: '2Y', days: 730 },
 ];
-
-const inputStyle = { width: 72, background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', padding: '6px 8px', fontSize: 13, fontVariantNumeric: 'tabular-nums' };
-const dimLabel = { fontSize: 12, color: 'var(--text-dim)' };
 
 /**
  * One holding under the scenario, in log terms so it compounds rather than overshooting:
@@ -120,30 +85,6 @@ function BarEndLabel({ x, y, width, height, value, row }) {
   return (
     <text x={end + (neg ? -(whisker + 6) : whisker + 6)} y={y + height / 2} dy={4} textAnchor={neg ? 'end' : 'start'} fill={flat ? DIM : neg ? RED : GREEN} fontSize={12} fontWeight={600}>
       {fmtPct(value)}
-    </text>
-  );
-}
-
-// % change after a holding's "after" bar, coloured by direction like the portfolio labels.
-function HoldingPctLabel({ x, y, width, height, value }) {
-  if (value == null) return null;
-  return (
-    <text x={x + width + 6} y={y + height / 2} dy={4} fill={signColor(value)} fontSize={11}>
-      {fmtPct(value)}
-    </text>
-  );
-}
-
-// Portfolio name on the chart's axis, as a link to that portfolio's page. The axis is
-// keyed by id (names needn't be unique), so the label is looked up here.
-function PortfolioTick({ x, y, payload, nameById, onOpen }) {
-  const name = nameById.get(payload.value) || '';
-  const short = name.length > 16 ? `${name.slice(0, 15).trimEnd()}…` : name;
-  return (
-    <text x={x} y={y} dy={4} textAnchor="end" fill={ACCENT} fontSize={12} style={{ cursor: 'pointer' }}
-      onClick={e => { e.stopPropagation(); onOpen(payload.value); }}>
-      <title>Open {name}</title>
-      {short}
     </text>
   );
 }
@@ -184,12 +125,12 @@ function HoldingTooltip({ active, payload, ccy }) {
 }
 
 /**
- * Market stress test across every portfolio. A move in one US index, down or up, is pushed
+ * Hypothetical shock across every portfolio. A move in one US index, down or up, is pushed
  * through each holding's beta to that index — measured on weekly returns in the display
  * currency and shrunk toward 1 by its uncertainty — with a one-standard-deviation range
  * around each result.
  */
-export default function StressTest() {
+function HypotheticalShock() {
   const [lookback, setLookback] = useState(730);
   const [usIndex, setUsIndex] = useState('^GSPC');
   const [ccy, setCcy] = useState('USD');
@@ -279,11 +220,6 @@ export default function StressTest() {
 
   const shown = useMemo(() => results.filter(p => !hidden.has(p.id)), [results, hidden]);
   const nameById = useMemo(() => new Map(results.map(p => [p.id, p.name])), [results]);
-  const toggleShown = id => setHidden(prev => {
-    const next = new Set(prev);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
-  });
 
   // Percent axis for the portfolio chart: a round tick step sized to the range (10% for a
   // crash, up to 1000% for a long boom), reaching past each whisker with ~10% of the width
@@ -330,8 +266,6 @@ export default function StressTest() {
   return (
     <div>
       <div className="panel">
-        <h2>Market Stress Test</h2>
-
         {/* Scenario presets, crashes then booms */}
         {SCENARIO_GROUPS.map(g => (
           <div key={g.kind} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
@@ -426,21 +360,7 @@ export default function StressTest() {
               </div>
             </div>
             {/* Which portfolios to compare */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
-              <span style={{ ...dimLabel, marginRight: 4 }}>Show</span>
-              <button className="btn ghost" style={{ padding: '3px 10px', fontSize: 12 }} onClick={() => setHidden(new Set())}>All</button>
-              <button className="btn ghost" style={{ padding: '3px 10px', fontSize: 12 }} onClick={() => setHidden(new Set(results.map(p => p.id)))}>None</button>
-              <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
-              {results.map(p => {
-                const on = !hidden.has(p.id);
-                return (
-                  <button key={p.id} className={`btn ${on ? '' : 'ghost'}`} style={{ padding: '3px 10px', fontSize: 12 }}
-                    aria-pressed={on} onClick={() => toggleShown(p.id)}>
-                    {p.name}
-                  </button>
-                );
-              })}
-            </div>
+            <PortfolioChips portfolios={results} hidden={hidden} setHidden={setHidden} />
 
             {shown.length === 0 ? (
               <div className="loading">No portfolios selected. Pick one or more above.</div>
@@ -591,6 +511,32 @@ export default function StressTest() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+const MODES = [
+  { key: 'replay', label: 'Historical replay', hint: 'Run today\'s holdings through what actually happened in a past crash or boom' },
+  { key: 'shock', label: 'Hypothetical shock', hint: 'Pick any size of market move and see what each holding\'s beta implies' },
+];
+
+/** The stress test page: a historical replay or a hypothetical shock, over every portfolio. */
+export default function StressTest() {
+  const [mode, setMode] = useState('replay');
+  return (
+    <div>
+      <div className="panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, padding: '14px 20px' }}>
+        <h2 style={{ margin: 0 }}>Market Stress Test</h2>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }} role="tablist">
+          {MODES.map(m => (
+            <button key={m.key} role="tab" aria-selected={mode === m.key} title={m.hint}
+              className={`btn ${mode === m.key ? '' : 'ghost'}`} onClick={() => setMode(m.key)}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {mode === 'replay' ? <HistoricalReplay /> : <HypotheticalShock />}
     </div>
   );
 }
