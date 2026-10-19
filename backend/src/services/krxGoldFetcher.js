@@ -1,19 +1,21 @@
 /**
- * Scrape KRX 금현물 spot (KRW/g) from Naver Finance.
- * Yahoo Finance doesn't carry this; Naver publishes the official 매매기준율 daily.
+ * Domestic gold spot (KRW/g) from Naver, stored as KRX-GOLD-SPOT.
+ * Yahoo Finance doesn't carry this; Naver publishes the daily 매매기준율 (국내 금, CMDT_GD).
  *
- * Source page: https://finance.naver.com/marketindex/goldDailyQuote.naver?page=N
- * Each page has ~10 trading days. Charset is EUC-KR but date/number fields are ASCII.
+ * Daily history: https://api.stock.naver.com/marketindex/metals/CMDT_GD/prices?page=N&pageSize=50
+ * (JSON, newest first, back to 2014). It replaced the HTML page
+ * finance.naver.com/marketindex/goldDailyQuote.naver, which Naver retired in September 2026
+ * (it now answers 410 Gone) and which carried the same series.
  */
 import { pool } from '../db.js';
 
-const NAVER_URL = 'https://finance.naver.com/marketindex/goldDailyQuote.naver';
 const NAVER_LIVE_URL = 'https://api.stock.naver.com/marketindex/metals/CMDT_GD';
+const NAVER_HISTORY_URL = `${NAVER_LIVE_URL}/prices`;
+const PAGE_SIZE = 50; // the API allows up to 60
 const PAGE_DELAY_MS = Number(process.env.NAVER_PAGE_DELAY_MS || 800);
 // Safety stop on paging, not a history limit: pages are only requested as far back as the
 // caller's `days` asks for, and the walk also stops as soon as a page adds nothing new.
-// 120 pages ≈ 1200 trading days, enough for a multi-year backfill; the daily job asks for
-// a handful of pages and never gets near it.
+// 120 pages ≈ 6000 trading days, more than the API's history; the daily job asks for one.
 const MAX_PAGES_CAP = Number(process.env.NAVER_MAX_PAGES || 120);
 // A hung Naver response must not stall the request or the nightly job indefinitely.
 const FETCH_TIMEOUT_MS = 15_000;
@@ -47,26 +49,22 @@ export async function fetchLiveKrxGold() {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchPage(page) {
-  const res = await fetch(`${NAVER_URL}?page=${page}`, {
+  const res = await fetch(`${NAVER_HISTORY_URL}?page=${page}&pageSize=${PAGE_SIZE}`, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     headers: { 'User-Agent': 'Mozilla/5.0 (portfolio-tracker krxGoldFetcher)' },
   });
-  if (!res.ok) throw new Error(`Naver page ${page} HTTP ${res.status}`);
-  return res.text();
+  if (!res.ok) throw new Error(`Naver gold history page ${page} HTTP ${res.status}`);
+  return res.json();
 }
 
-// Each row: <tr class="up|down"> ... <td class="date">YYYY.MM.DD</td> <td class="num">123,456.78</td> ...
-const ROW_RE = /<td class="date">(\d{4})\.(\d{2})\.(\d{2})<\/td>\s*<td class="num">([\d,.]+)<\/td>/g;
-
-function parseRows(html) {
+// Each row: { localTradedAt: '2026-10-16T00:00:00+09:00', closePrice: '179,073.79', ... }
+export function parseRows(items) {
+  if (!Array.isArray(items)) return [];
   const rows = [];
-  let m;
-  while ((m = ROW_RE.exec(html)) !== null) {
-    const [, y, mo, d, priceStr] = m;
-    rows.push({
-      trade_date: `${y}-${mo}-${d}`,
-      close_px: Number(priceStr.replace(/,/g, '')),
-    });
+  for (const it of items) {
+    const date = /^(\d{4}-\d{2}-\d{2})/.exec(it?.localTradedAt || '')?.[1];
+    const px = Number(String(it?.closePrice ?? '').replace(/,/g, ''));
+    if (date && Number.isFinite(px) && px > 0) rows.push({ trade_date: date, close_px: px });
   }
   return rows;
 }
@@ -76,14 +74,14 @@ function parseRows(html) {
  * @param {number} days  Approximate calendar days back to fetch
  */
 export async function fetchAndStoreKrxGoldSpot(instrument, days = 365) {
-  const targetPages = Math.min(MAX_PAGES_CAP, Math.max(1, Math.ceil(days / 10)));
+  // A page of 50 trading days covers about 70 calendar days.
+  const targetPages = Math.min(MAX_PAGES_CAP, Math.max(1, Math.ceil(days / 70)));
   const seen = new Set();
   const allRows = [];
 
   for (let p = 1; p <= targetPages; p++) {
     if (p > 1) await sleep(PAGE_DELAY_MS);
-    const html = await fetchPage(p);
-    const rows = parseRows(html);
+    const rows = parseRows(await fetchPage(p));
     if (rows.length === 0) break; // no more history
     let added = 0;
     for (const r of rows) {
