@@ -19,7 +19,7 @@ const STRATEGIES = [
 
 // Starting assumptions, in won (the page opens in KRW).
 const DEFAULTS = {
-  other: 400_000_000,       // assets outside the tracked portfolios
+  other: 550_000_000,       // assets outside the tracked portfolios
   spending: 54_000_000,     // ₩4.5M a month, today's money
   income: 40_000_000,       // National Pension, today's money
   incomeStart: '15',        // years from now
