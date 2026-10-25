@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { ComposedChart, LineChart, Line, Area, Brush, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { api } from '../api.js';
+import { rowsOf, intlKrwPerGram, mergeGold, averages, axisRange } from '../goldSeries.js';
 
 const KRX_SYMBOL = 'KRX-GOLD-SPOT';
 const INTL_SYMBOL = 'GC=F';
+const FX_SYMBOL = 'KRW=X';
 const MAX_DAYS = 1825;
 
 // Trend-chart period presets (history caps at 1825 days / 5y).
@@ -15,24 +17,6 @@ const PRESETS = [
 
 const KRX_COLOR = '#fbbf24';  // amber
 const INTL_COLOR = '#4a9eff'; // blue
-
-// 1Y / 3Y / 5Y mean close from a daily price series ([{trade_date, close_px}]).
-// Windows that run past the available history just average whatever exists.
-function computeAverages(prices) {
-  const rows = (prices || [])
-    .map(p => ({ t: (p.trade_date || '').slice(0, 10), v: Number(p.close_px) }))
-    .filter(r => r.t && !isNaN(r.v));
-  const avgOver = nDays => {
-    if (rows.length === 0) return null;
-    const c = new Date();
-    c.setDate(c.getDate() - nDays);
-    const cut = c.toISOString().slice(0, 10);
-    const sel = rows.filter(r => r.t >= cut);
-    if (sel.length === 0) return null;
-    return sel.reduce((a, r) => a + r.v, 0) / sel.length;
-  };
-  return { y1: avgOver(365), y3: avgOver(1095), y5: avgOver(MAX_DAYS) };
-}
 
 function fmtNum(n, digits = 2) {
   if (n == null || isNaN(n)) return '–';
@@ -66,6 +50,7 @@ export default function GoldGapPanel() {
   const [err, setErr] = useState(null);
   const [krxHist, setKrxHist] = useState(null);
   const [intlHist, setIntlHist] = useState(null);
+  const [fxHist, setFxHist] = useState(null);
 
   useEffect(() => {
     const load = () => api.goldGap().then(setData).catch(e => setErr(e.message));
@@ -79,10 +64,14 @@ export default function GoldGapPanel() {
   useEffect(() => {
     api.prices(KRX_SYMBOL, MAX_DAYS).then(d => setKrxHist(d.prices || [])).catch(() => {});
     api.prices(INTL_SYMBOL, MAX_DAYS).then(d => setIntlHist(d.prices || [])).catch(() => {});
+    api.prices(FX_SYMBOL, MAX_DAYS).then(d => setFxHist(d.prices || [])).catch(() => {});
   }, []);
 
-  const krxAvgs = useMemo(() => computeAverages(krxHist), [krxHist]);
-  const intlAvgs = useMemo(() => computeAverages(intlHist), [intlHist]);
+  const krxRows = useMemo(() => rowsOf(krxHist), [krxHist]);
+  // International gold in KRW/g at each day's exchange rate, so both share one unit.
+  const intlRows = useMemo(() => intlKrwPerGram(rowsOf(intlHist), rowsOf(fxHist)), [intlHist, fxHist]);
+  const krxAvgs = useMemo(() => averages(krxRows), [krxRows]);
+  const intlAvgs = useMemo(() => averages(intlRows), [intlRows]);
 
   // Latest close date across both series — the freshness of the trend/averages.
   const lastDataDate = useMemo(() => {
@@ -95,25 +84,31 @@ export default function GoldGapPanel() {
   const [days, setDays] = useState(365); // chart period, default 1Y
   const [draft, setDraft] = useState('365'); // custom-period input buffer
 
-  // Merge both series by date for the dual-axis trend chart, filtered to the selected period.
+  // Both series by date for the trend chart, filtered to the selected period.
   const chartData = useMemo(() => {
     const c = new Date();
     c.setDate(c.getDate() - days);
-    const cut = c.toISOString().slice(0, 10);
-    const map = new Map();
-    for (const p of krxHist || []) {
-      const t = (p.trade_date || '').slice(0, 10);
-      if (t >= cut) map.set(t, { date: t, krx: Number(p.close_px) });
-    }
-    for (const p of intlHist || []) {
-      const t = (p.trade_date || '').slice(0, 10);
-      if (t < cut) continue;
-      const e = map.get(t) || { date: t };
-      e.intl = Number(p.close_px);
-      map.set(t, e);
-    }
-    return [...map.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
-  }, [krxHist, intlHist, days]);
+    return mergeGold(krxRows, intlRows, c.toISOString().slice(0, 10));
+  }, [krxRows, intlRows, days]);
+
+  // Window picked with the slider under the price chart (null: the whole period). Both
+  // charts show it, and both axes refit to it, so zooming in stretches the gap.
+  const [win, setWin] = useState(null);
+  useEffect(() => setWin(null), [days]);
+  const shown = useMemo(
+    () => (win ? chartData.slice(win.startIndex, win.endIndex + 1) : chartData),
+    [chartData, win]
+  );
+
+  // Daily premium over the window, and its average.
+  const premiumData = useMemo(() => shown.filter(e => e.premium != null), [shown]);
+  const avgPremium = premiumData.length ? premiumData.reduce((a, e) => a + e.premium, 0) / premiumData.length : null;
+
+  // Axes fitted to the data rather than starting near round numbers far below it. The
+  // premium axis leaves the rare spike (top and bottom 1% of days) off the scale, so the
+  // usual day-to-day range stays readable.
+  const priceAxis = useMemo(() => axisRange(shown.flatMap(e => [e.krx, e.intl]), { ticks: 8 }), [shown]);
+  const premiumAxis = useMemo(() => axisRange(premiumData.map(e => e.premium), { ticks: 7, clip: 0.01, include: [0] }), [premiumData]);
 
   const applyDraft = () => {
     const n = Math.round(Number(draft));
@@ -170,11 +165,16 @@ export default function GoldGapPanel() {
           </div>
           <div style={{ fontSize: 12, marginTop: 4 }}>
             30d: <span className={intl.return_30d > 0 ? 'up' : intl.return_30d < 0 ? 'down' : ''}>{fmtPct(intl.return_30d)}</span>
-            <span style={{ marginLeft: 8, color: 'var(--text-dim)' }}>
-              ≈ {fmtNum(intl.latest_krw_per_g, 0)} KRW/g
-            </span>
+            {intl.return_30d_krw != null && (
+              <span style={{ color: 'var(--text-dim)' }}>
+                {' '}· in KRW <span className={intl.return_30d_krw > 0 ? 'up' : intl.return_30d_krw < 0 ? 'down' : ''}>{fmtPct(intl.return_30d_krw)}</span>
+              </span>
+            )}
           </div>
-          <AvgBlock avgs={intlAvgs} current={intl.latest_usd_per_oz} unit="USD/oz" digits={2} />
+          <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>
+            ≈ {fmtNum(intl.latest_krw_per_g, 0)} KRW/g at today's rate
+          </div>
+          <AvgBlock avgs={intlAvgs} current={intl.latest_krw_per_g} unit="KRW/g" digits={0} />
         </div>
 
         <div>
@@ -184,7 +184,7 @@ export default function GoldGapPanel() {
             {fmtNum(gap?.premium_krw_per_g, 0)} KRW/g · USD/KRW {fmtNum(fx.krw_per_usd, 2)}
           </div>
           <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-dim)' }}>
-            30d return diff: <span className={gap?.return_30d_diff > 0 ? 'up' : 'down'}>{fmtPct(gap?.return_30d_diff)}</span>
+            30d return diff (both in KRW): <span className={gap?.return_30d_diff > 0 ? 'up' : 'down'}>{fmtPct(gap?.return_30d_diff)}</span>
           </div>
         </div>
       </div>
@@ -227,23 +227,72 @@ export default function GoldGapPanel() {
       {chartData.length === 0 ? (
         <div className="loading">No price history yet.</div>
       ) : (
-        <div style={{ width: '100%', height: 300, marginTop: 12 }}>
-          <ResponsiveContainer>
-            <LineChart data={chartData}>
-              <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
-              <XAxis dataKey="date" stroke="#9aa0a6" fontSize={11} minTickGap={40} />
-              <YAxis yAxisId="krx" orientation="left" stroke={KRX_COLOR} fontSize={11} domain={['auto', 'auto']} tickFormatter={v => fmtNum(v, 0)} width={56} />
-              <YAxis yAxisId="intl" orientation="right" stroke={INTL_COLOR} fontSize={11} domain={['auto', 'auto']} tickFormatter={v => fmtNum(v, 0)} width={48} />
-              <Tooltip
-                contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }}
-                formatter={(v, name) => [fmtNum(v, name === 'KRX (KRW/g)' ? 0 : 2), name]}
-              />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Line yAxisId="krx" type="monotone" dataKey="krx" name="KRX (KRW/g)" stroke={KRX_COLOR} dot={false} strokeWidth={2} connectNulls />
-              <Line yAxisId="intl" type="monotone" dataKey="intl" name="Intl (USD/oz)" stroke={INTL_COLOR} dot={false} strokeWidth={2} connectNulls />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        <>
+          <div style={{ width: '100%', height: 420, marginTop: 12 }}>
+            <ResponsiveContainer>
+              <ComposedChart data={chartData}>
+                <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
+                <XAxis dataKey="date" stroke="#9aa0a6" fontSize={11} minTickGap={40} />
+                <YAxis stroke="#9aa0a6" fontSize={11} domain={priceAxis.domain} ticks={priceAxis.ticks} tickFormatter={v => fmtNum(v, 0)} width={64} />
+                <Tooltip
+                  contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }}
+                  formatter={(v, name) => [`${fmtNum(v, 0)} KRW/g`, name]}
+                />
+                <Legend wrapperStyle={{ fontSize: 12 }} verticalAlign="top" />
+                {/* The gap itself, shaded: amber where KRX is above, blue where below. */}
+                <Area type="monotone" dataKey="above" name="KRX above" fill={KRX_COLOR} fillOpacity={0.45} stroke="none" legendType="square" tooltipType="none" connectNulls isAnimationActive={false} />
+                <Area type="monotone" dataKey="below" name="KRX below" fill={INTL_COLOR} fillOpacity={0.45} stroke="none" legendType="square" tooltipType="none" connectNulls isAnimationActive={false} />
+                <Line type="monotone" dataKey="krx" name="KRX" stroke={KRX_COLOR} dot={false} strokeWidth={1.5} connectNulls isAnimationActive={false} />
+                <Line type="monotone" dataKey="intl" name="International (in KRW)" stroke={INTL_COLOR} dot={false} strokeWidth={1.5} connectNulls isAnimationActive={false} />
+                <Brush
+                  key={days}
+                  dataKey="date"
+                  startIndex={win ? win.startIndex : 0}
+                  endIndex={win ? win.endIndex : Math.max(0, chartData.length - 1)}
+                  height={26}
+                  stroke="#4a9eff"
+                  fill="#1a1f29"
+                  travellerWidth={8}
+                  tickFormatter={() => ''}
+                  onChange={r => setWin(r.startIndex === 0 && r.endIndex === chartData.length - 1 ? null : r)}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
+            International gold (USD/oz) converted to KRW/g at each day's USD/KRW rate. Drag the slider's ends to zoom into a stretch of time; the scale refits so the gap shows more.
+          </div>
+
+          {premiumData.length > 0 && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginTop: 16 }}>
+                <h3 style={{ margin: 0 }}>Korean Premium</h3>
+                <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+                  average over {win ? `${shown[0]?.date} – ${shown[shown.length - 1]?.date}` : 'the period'} <span className={avgPremium > 0 ? 'up' : avgPremium < 0 ? 'down' : ''}>{fmtPct(avgPremium)}</span>
+                </span>
+              </div>
+              <div style={{ width: '100%', height: 220, marginTop: 8 }}>
+                <ResponsiveContainer>
+                  <LineChart data={premiumData}>
+                    <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
+                    <XAxis dataKey="date" stroke="#9aa0a6" fontSize={11} minTickGap={40} />
+                    <YAxis stroke="#9aa0a6" fontSize={11} domain={premiumAxis.domain} ticks={premiumAxis.ticks} allowDataOverflow tickFormatter={v => fmtPct(v, 1)} width={64} />
+                    <Tooltip
+                      contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }}
+                      formatter={v => [fmtPct(v), 'KRX over international']}
+                    />
+                    <ReferenceLine y={0} stroke="#9aa0a6" />
+                    <Line type="monotone" dataKey="premium" stroke={KRX_COLOR} dot={false} strokeWidth={1.5} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
+                KRX closes in the Seoul afternoon and international gold in the New York evening, so part of each day's premium is that day's price move.
+                {premiumAxis.clipped > 0 && ` ${premiumAxis.clipped} unusual ${premiumAxis.clipped === 1 ? 'day runs' : 'days run'} off the scale; hover for the value.`}
+              </div>
+            </>
+          )}
+        </>
       )}
     </div>
   );
