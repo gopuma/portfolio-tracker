@@ -3,7 +3,7 @@
  * an HttpError(400) with a message safe to show the user, so bad input never reaches MySQL
  * (where it would surface as a 500 carrying the raw driver error).
  *
- * Bounds follow the `transactions` columns: shares DECIMAL(24,6), price DECIMAL(18,4).
+ * Bounds follow the `transactions` columns: shares DECIMAL(26,8), price DECIMAL(18,4).
  * They are kept well inside the column limits so derived values (a rescaled buy price,
  * shares × price) can't overflow either.
  */
@@ -19,7 +19,7 @@ export class HttpError extends Error {
 export const badRequest = message => new HttpError(400, message);
 
 export const MAX_SHARES = 1e12;   // column allows < 1e18
-export const MIN_SHARES = 0.000001; // column scale is 6
+export const MIN_SHARES = 0.00000001; // column scale is 8 (one satoshi)
 export const MAX_PRICE = 1e10;    // column allows < 1e14
 export const MIN_PRICE = 0.0001;  // column scale is 4 — anything smaller would store as 0
 const MIN_DATE = '1970-01-01';

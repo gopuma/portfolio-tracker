@@ -361,7 +361,8 @@ function makeVolumeLabel(data, key) {
     // to be sized to that, not to a comfortable one. Falls back to a compact form ("3.2K")
     // when the full count won't fit rather than letting it spill into the next bar.
     if (!(height > 11) || !(width > 18)) return null;
-    const full = Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+    // A fraction of a coin (0.05 BTC) keeps its decimals rather than rounding to 0.
+    const full = Number(n).toLocaleString(undefined, { maximumFractionDigits: Math.abs(n) < 10 ? 4 : 0 });
     const fits = full.length * VOL_FONT * 0.58 <= width;
     return (
       <text

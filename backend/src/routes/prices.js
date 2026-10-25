@@ -1,6 +1,7 @@
 import express from 'express';
 import { query, getInstrument } from '../db.js';
 import { fetchQuotes } from '../services/priceFetcher.js';
+import { UPBIT_MARKETS, fetchLiveUpbit } from '../services/upbitFetcher.js';
 
 export const pricesRouter = express.Router();
 
@@ -20,6 +21,18 @@ pricesRouter.get('/quotes', async (req, res, next) => {
     const symbols = String(req.query.symbols || '').split(',').map(s => s.trim()).filter(Boolean);
     if (symbols.length === 0) return res.json({ quotes: {} });
     const quotes = await fetchQuotes(symbols);
+
+    // Won bitcoin isn't on Yahoo: its live price is Upbit's last trade. Bitcoin trades
+    // around the clock, so the market is always open.
+    await Promise.all(symbols.filter(s => UPBIT_MARKETS[s]).map(async s => {
+      try {
+        const t = await fetchLiveUpbit(UPBIT_MARKETS[s]);
+        quotes[s] = {
+          price: t.price, currency: 'KRW', time: t.traded_at, market_state: 'REGULAR',
+          previous_close: t.price - t.change, change: t.change, change_percent: t.change_pct * 100,
+        };
+      } catch { /* falls back to the stored close below */ }
+    }));
 
     // Fall back to the latest stored close for any symbol Yahoo didn't price (offline /
     // throttled) so the cards still render the last known value with market_state 'CLOSED'.

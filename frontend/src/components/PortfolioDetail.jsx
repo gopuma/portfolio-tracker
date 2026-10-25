@@ -10,6 +10,11 @@ function fmtNum(n, d = 2) {
   if (n == null || isNaN(n)) return '–';
   return Number(n).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
 }
+// Share counts: whole numbers as before, fractions (0.05 BTC) to as many as 8 decimals.
+function fmtShares(n) {
+  if (n == null || isNaN(n)) return '–';
+  return Number(n).toLocaleString(undefined, { maximumFractionDigits: 8 });
+}
 function fmtMoney(n, ccy, d = 0) {
   if (n == null || isNaN(n)) return '–';
   return `${Number(n).toLocaleString(undefined, { maximumFractionDigits: d })} ${ccy || ''}`.trim();
@@ -222,7 +227,7 @@ export default function PortfolioDetail() {
   const allSelected = hasHoldings && holdings.every(h => selected.has(h.id));
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(holdings.map(h => h.id)));
 
-  const startEditShares = (h) => { setEditShareId(h.id); setShareDraft(String(h.shares)); };
+  const startEditShares = (h) => { setEditShareId(h.id); setShareDraft(String(Number(h.shares))); };
   const saveShares = async (h) => {
     const n = Number(shareDraft);
     setEditShareId(null);
@@ -461,7 +466,7 @@ export default function PortfolioDetail() {
                           style={{ ...field, width: 90, textAlign: 'right' }}
                         />
                       ) : (
-                        <span style={editableHint}>{fmtNum(h.shares, 0)}</span>
+                        <span style={editableHint}>{fmtShares(h.shares)}</span>
                       )}
                     </td>
                     <td
@@ -681,7 +686,7 @@ function AddHoldingForm({ portfolioId, full, onAdded, embedded, accounts = [], h
       if (avgCost !== '' && Number(avgCost) > 0) body.avg_cost = Number(avgCost);
       if (account.trim()) body.account = account.trim();
       const r = await api.addHolding(portfolioId, body);
-      setOk(`Added ${r.symbol}${r.account ? ` (${r.account})` : ''} — ${fmtNum(r.shares, 0)} @ ${fmtNum(r.cost_price)} ${r.currency}`);
+      setOk(`Added ${r.symbol}${r.account ? ` (${r.account})` : ''} — ${fmtShares(r.shares)} @ ${fmtNum(r.cost_price)} ${r.currency}`);
       setSelected(null); setMeta(null); setQuery(''); setShares(''); setPrice(''); setAvgCost(''); setAccount('');
       onAdded?.();
     } catch (e2) {

@@ -25,7 +25,8 @@ import { regress, toReturns } from './stats.js';
 export const HISTORY_FROM = '1985-01-01';
 
 // Peak to trough for a crash, trough to peak for a boom, on the index named in `note`.
-// `end: null` runs to the latest stored date.
+// `end: null` runs to the latest stored date. `group: 'crypto'` lists an event on its own
+// row in the picker.
 export const REPLAY_EVENTS = [
   { key: 'crash-1987', kind: 'crash', label: '1987 crash', start: '1987-08-25', end: '1987-12-04', note: 'S&P 500 peak to trough, through Black Monday (19 Oct 1987)' },
   { key: 'asia-1997', kind: 'crash', label: 'Asian crisis 1997–98', start: '1997-06-17', end: '1998-06-16', note: 'KOSPI peak to trough; the won lost about half its value against the dollar' },
@@ -33,8 +34,14 @@ export const REPLAY_EVENTS = [
   { key: 'gfc', kind: 'crash', label: 'Financial crisis 2007–09', start: '2007-10-09', end: '2009-03-09', note: 'S&P 500 peak to trough' },
   { key: 'covid', kind: 'crash', label: 'COVID crash 2020', start: '2020-02-19', end: '2020-03-23', note: 'S&P 500 peak to trough' },
   { key: 'rates-2022', kind: 'crash', label: 'Rate shock 2022', start: '2021-11-19', end: '2022-12-28', note: 'NASDAQ peak to trough' },
+  // Crashes that started in crypto itself, which a stock index understates.
+  { key: 'crypto-2018', group: 'crypto', kind: 'crash', label: 'Crypto winter 2018', start: '2017-12-16', end: '2018-12-15', note: 'Bitcoin peak to trough, after the 2017 bubble' },
+  { key: 'crypto-2022', group: 'crypto', kind: 'crash', label: 'Crypto crash 2022', start: '2021-11-08', end: '2022-11-21', note: 'Bitcoin peak to trough, through the Terra/Luna and FTX collapses' },
+  { key: 'crypto-2025', group: 'crypto', kind: 'crash', label: 'Bitcoin slide 2025–26', start: '2025-10-06', end: '2026-06-30', note: 'Bitcoin peak to trough, from its all-time high' },
   { key: 'dotcom-bubble', kind: 'boom', label: 'Dot-com bubble 1998–2000', start: '1998-10-08', end: '2000-03-10', note: 'NASDAQ trough to peak' },
   { key: 'covid-rally', kind: 'boom', label: 'Post-COVID rally 2020–22', start: '2020-03-23', end: '2022-01-03', note: 'S&P 500 trough to peak' },
+  { key: 'crypto-2020', group: 'crypto', kind: 'boom', label: 'Bitcoin rally 2020–21', start: '2020-03-12', end: '2021-11-08', note: 'Bitcoin trough to peak, from the COVID low' },
+  { key: 'crypto-2023', group: 'crypto', kind: 'boom', label: 'Bitcoin rally 2023–25', start: '2022-11-21', end: '2025-10-06', note: 'Bitcoin trough to peak, from the FTX low to its all-time high' },
   { key: 'ai-boom', kind: 'boom', label: 'AI boom 2023–', start: '2022-12-28', end: null, note: 'NASDAQ from the post-ChatGPT low to the latest close' },
 ];
 
@@ -57,23 +64,30 @@ export const PROXY_CHAINS = {
   '458730.KS': US_DIVIDEND, '489250.KS': US_DIVIDEND, // US dividend funds listed in Seoul
   '0046A0.KS': ['TBILL'],                           // US T-bill fund listed in Seoul
   'KRX-GOLD-SPOT': ['GC=F'],                        // gold futures from Aug 2000
+  'BTC-USD': ['BTC-USD'],                           // global bitcoin from Sep 2014
+  'UPBIT-KRW-BTC': ['BTC-USD'],                     // Upbit's won price from Sep 2017
 };
-const DEFAULT_CHAINS = { US: ['^GSPC'], KR: ['^KS11'] };
+// Any other coin follows bitcoin by its beta to it.
+const DEFAULT_CHAINS = { US: ['^GSPC'], KR: ['^KS11'], CRYPTO: ['BTC-USD'] };
 export const FALLBACK_INDEX = '^GSPC';
 
 export const SERIES_NAMES = {
   '^GSPC': 'S&P 500', '^IXIC': 'NASDAQ Composite', '^NDX': 'NASDAQ-100', '^RUT': 'Russell 2000',
   '^SOX': 'PHLX Semiconductor', '^XAU': 'PHLX Gold/Silver miners', '^KS11': 'KOSPI',
   XLF: 'Financials sector ETF', IWD: 'Russell 1000 Value ETF', LQD: 'Corporate bond ETF',
-  'GC=F': 'Gold futures', TBILL: '3-month T-bills',
+  'GC=F': 'Gold futures', TBILL: '3-month T-bills', 'BTC-USD': 'Bitcoin',
 };
+
+// What the summary line reports each market did over the event. Bitcoin shows only for
+// events after its prices begin (Sep 2014).
+const SUMMARY_INDEXES = ['^GSPC', '^IXIC', '^KS11', 'BTC-USD'];
 
 // The FX series the replay converts with: Yahoo's from Dec 2003, FRED's daily noon rates before.
 export const FX_SERIES = ['KRW=X', 'JPYKRW=X', 'FRED:DEXKOUS', 'FRED:DEXJPUS'];
 // Every series the replay can draw on besides holdings' own: proxies, FX, the fallback,
 // and the indexes the summary line reports.
 export function referenceSeries() {
-  const s = new Set([FALLBACK_INDEX, '^IXIC', '^NDX', '^KS11', ...FX_SERIES]);
+  const s = new Set([FALLBACK_INDEX, ...SUMMARY_INDEXES, '^NDX', ...FX_SERIES]);
   for (const chain of [...Object.values(PROXY_CHAINS), ...Object.values(DEFAULT_CHAINS)]) for (const x of chain) s.add(x);
   return [...s];
 }
@@ -81,7 +95,7 @@ export function referenceSeries() {
 // Native currency of a proxy or index series. (A holding's own series is in the holding's
 // currency and never goes through this.)
 export function seriesCurrency(series) {
-  return series === '^KS11' || series.endsWith('.KS') || series === 'KRX-GOLD-SPOT' ? 'KRW' : 'USD';
+  return series === '^KS11' || series.endsWith('.KS') || series === 'KRX-GOLD-SPOT' || series === 'UPBIT-KRW-BTC' ? 'KRW' : 'USD';
 }
 
 export const BASES = ['factor', 'actual'];
@@ -372,10 +386,11 @@ export async function replayEvent(event, portfolios, meta, currency, basis = 'fa
     };
   });
 
-  // What the reference markets did over the window, for the summary line.
-  const indexes = ['^GSPC', '^IXIC', '^KS11'].map(s => {
+  // What the reference markets did over the window, for the summary line. Read from their
+  // own rows, not the axis: bitcoin's weekends belong on the axis only when one is held.
+  const indexes = SUMMARY_INDEXES.map(s => {
     if (!coversWindow(win.get(s), start, end)) return { series: s, name: SERIES_NAMES[s], change: null };
-    const get = at.get(s);
+    const get = lookup(win.get(s));
     return { series: s, name: SERIES_NAMES[s], change: get(dates[dates.length - 1]) / get(t0) - 1 };
   });
   const won = fxWin('KRW', 'USD', dates[dates.length - 1]) / fxWin('KRW', 'USD', t0) - 1;

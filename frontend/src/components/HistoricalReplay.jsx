@@ -10,9 +10,11 @@ import {
   fmtPct, fmtNum, fmtMoney, fmtCompact, cls, signColor, HoldingPctLabel, PortfolioTick, PortfolioChips,
 } from './stressShared.jsx';
 
+// Events tagged group 'crypto' (bitcoin's own crashes and rallies) get their own row.
 const GROUPS = [
   { kind: 'crash', label: 'Crashes' },
   { kind: 'boom', label: 'Booms' },
+  { kind: 'crypto', label: 'Crypto' },
 ];
 const BASES = [
   { key: 'factor', label: "Today's sensitivities", hint: 'Every holding follows its proxy index, scaled by its beta to that proxy today — the factor-model approach risk systems use' },
@@ -168,9 +170,9 @@ export default function HistoricalReplay() {
         {GROUPS.map(g => (
           <div key={g.kind} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
             <span style={{ ...dimLabel, width: 56 }}>{g.label}</span>
-            {events.filter(e => e.kind === g.kind).map(e => (
+            {events.filter(e => (e.group || e.kind) === g.kind).map(e => (
               <button key={e.key} className={`btn ${eventKey === e.key ? '' : 'ghost'}`} title={e.note} onClick={() => setEventKey(e.key)}>
-                {e.label}
+                {e.label}{e.group && <span className={eventKey === e.key ? '' : e.kind === 'crash' ? 'down' : 'up'} style={{ opacity: 0.9 }}> {e.kind === 'crash' ? '↓' : '↑'}</span>}
               </button>
             ))}
           </div>
@@ -366,7 +368,7 @@ export default function HistoricalReplay() {
               {fallbackCount > 0 && (
                 <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--amber)' }}>
                   * {fallbackCount} holding{fallbackCount > 1 ? 's' : ''} with no proxy reaching back to {ev.first_date.slice(0, 4)} (daily KOSPI starts Dec 1996, gold futures Aug 2000,
-                  the Russell 2000 Sep 1987); {fallbackCount > 1 ? 'these follow' : 'it follows'} the S&P 500 by {fallbackCount > 1 ? 'their' : 'its'} beta to it instead.
+                  bitcoin Sep 2014, the Russell 2000 Sep 1987); {fallbackCount > 1 ? 'these follow' : 'it follows'} the S&P 500 by {fallbackCount > 1 ? 'their' : 'its'} beta to it instead.
                 </p>
               )}
             </div>

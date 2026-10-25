@@ -1,6 +1,6 @@
 import express from 'express';
 import { query, getInstrument } from '../db.js';
-import { TRADING_DAYS, riskStats, toReturns, pearsonMaps, betaAlpha } from '../services/stats.js';
+import { TRADING_DAYS, CALENDAR_DAYS, riskStats, toReturns, pearsonMaps, betaAlpha } from '../services/stats.js';
 import { optimizePortfolio } from '../services/mpt.js';
 
 export const analyticsRouter = express.Router();
@@ -8,8 +8,9 @@ export const analyticsRouter = express.Router();
 const DEFAULT_DAYS = 365;
 const MAX_DAYS = 1825;
 
-// Market benchmarks for CAPM alpha/beta, by instrument market.
-const BENCHMARKS = { US: '^GSPC', KR: '^KS11' };
+// Market benchmarks for CAPM alpha/beta, by instrument market. Bitcoin is measured
+// against the S&P 500, the usual yardstick for how much it moves with risk assets.
+const BENCHMARKS = { US: '^GSPC', KR: '^KS11', CRYPTO: '^GSPC' };
 const BENCHMARK_NAMES = { '^GSPC': 'S&P 500', '^KS11': 'KOSPI' };
 
 const clampDays = raw => Math.min(Number(raw || DEFAULT_DAYS), MAX_DAYS);
@@ -105,9 +106,13 @@ analyticsRouter.post('/optimize', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Only the closes that fall on `dates`. Bitcoin trades every day and the S&P 500 five, so a
+// Monday's bitcoin return must run from Friday, as the index's does, not from Sunday.
+const onDates = (series, dates) => series.filter(p => dates.has(p.date));
+
 /**
  * Per-instrument return/risk stats plus CAPM alpha & beta vs the market benchmark
- * (S&P 500 for US, KOSPI for KR). Query params: ?days=365, ?rf=0.
+ * (S&P 500 for US and crypto, KOSPI for KR). Query params: ?days=365, ?rf=0.
  */
 analyticsRouter.get('/:symbol', async (req, res, next) => {
   try {
@@ -117,7 +122,9 @@ analyticsRouter.get('/:symbol', async (req, res, next) => {
     const rf = Number(req.query.rf || 0);
 
     const series = await loadSeries(inst.symbol, days);
-    const stats = riskStats(series, rf);
+    const crypto = inst.market === 'CRYPTO';
+    const periodsPerYear = crypto ? CALENDAR_DAYS : TRADING_DAYS;
+    const stats = riskStats(series, rf, periodsPerYear);
     if (!stats) {
       return res.json({ symbol: inst.symbol, days, rf, stats: null, note: 'Not enough price history for this window.' });
     }
@@ -127,7 +134,8 @@ analyticsRouter.get('/:symbol', async (req, res, next) => {
     let market = { benchmark: null, beta: null, alpha: null, correlation: null, r2: null, n: 0 };
     if (benchSymbol) {
       const benchSeries = await loadSeries(benchSymbol, days);
-      const ba = betaAlpha(toReturns(series).map, toReturns(benchSeries).map, rf);
+      const own = crypto ? onDates(series, new Set(benchSeries.map(p => p.date))) : series;
+      const ba = betaAlpha(toReturns(own).map, toReturns(benchSeries).map, rf);
       market = { benchmark: benchSymbol, benchmark_name: BENCHMARK_NAMES[benchSymbol] || benchSymbol, ...ba };
     }
 
@@ -136,7 +144,7 @@ analyticsRouter.get('/:symbol', async (req, res, next) => {
       display_name: inst.display_name,
       market: inst.market,
       currency: inst.currency,
-      days, rf, trading_days: TRADING_DAYS,
+      days, rf, trading_days: periodsPerYear,
       stats,
       capm: market,
       note: 'Beta vs benchmark daily returns; alpha is annualized Jensen’s alpha. R² = share of the asset’s variance explained by the benchmark.',

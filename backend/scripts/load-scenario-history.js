@@ -7,7 +7,7 @@
  *   - FRED: DEXKOUS (KRW per USD, from 1981) and DEXJPUS (JPY per USD) to carry the
  *     exchange rates back before Yahoo's start in Dec 2003; DTB3 (3-month T-bill rate)
  *   - TBILL: a total-return index built from DTB3, for T-bill funds
- *   - KRX-GOLD-SPOT isn't on Yahoo, so its rows are copied from `prices`
+ *   - KRX-GOLD-SPOT and UPBIT-KRW-BTC aren't on Yahoo, so their rows are copied from `prices`
  *
  * Safe to re-run: rows are upserted. Run it again now and then to extend the AI-boom
  * replay, which runs to the latest stored date, and after adding a holding.
@@ -23,7 +23,9 @@ import { fetchDailyBars } from '../src/services/priceFetcher.js';
 import { HISTORY_FROM, referenceSeries, tbillIndex } from '../src/services/historicalReplay.js';
 
 const FRED = ['DEXKOUS', 'DEXJPUS', 'DTB3'];
-const NOT_ON_YAHOO = new Set(['KRX-GOLD-SPOT', 'TBILL']);
+// Symbols whose history lives in `prices` (from Naver and Upbit), not on Yahoo.
+const FROM_PRICES = ['KRX-GOLD-SPOT', 'UPBIT-KRW-BTC'];
+const NOT_ON_YAHOO = new Set([...FROM_PRICES, 'TBILL']);
 const DAYS = Math.ceil((Date.now() - Date.parse(`${HISTORY_FROM}T00:00:00Z`)) / 86400000) + 7;
 
 async function upsert(series, rows) {
@@ -97,8 +99,12 @@ async function run() {
     }
   }
 
-  if (held.includes('KRX-GOLD-SPOT') && (!wanted.length || wanted.includes('KRX-GOLD-SPOT'))) {
-    report.push({ series: 'KRX-GOLD-SPOT', rows: await copyFromPrices('KRX-GOLD-SPOT') });
+  // Copied whether or not they're held yet: a few thousand rows each, and the replay needs
+  // them to measure a holding's beta the day it's added.
+  for (const s of FROM_PRICES) {
+    if (!wanted.length || wanted.includes(s)) {
+      report.push({ series: s, rows: await copyFromPrices(s) });
+    }
   }
 
   const cov = await query(

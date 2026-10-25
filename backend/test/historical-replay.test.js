@@ -64,6 +64,10 @@ test('the factor basis leaves a holding\'s own prices out; the actual basis puts
   // Unmapped symbols fall back to their market's index.
   assert.deepEqual(chainFor('XYZ', 'KR'), ['^KS11']);
   assert.deepEqual(chainFor('XYZ', 'US'), ['^GSPC']);
+  // Bitcoin in won follows the global price; any other coin follows bitcoin.
+  assert.deepEqual(chainFor('UPBIT-KRW-BTC', 'CRYPTO'), ['BTC-USD']);
+  assert.deepEqual(chainFor('UPBIT-KRW-BTC', 'CRYPTO', 'actual'), ['UPBIT-KRW-BTC', 'BTC-USD']);
+  assert.deepEqual(chainFor('ETH-USD', 'CRYPTO'), ['BTC-USD']);
 });
 
 test('USD/KRW uses Yahoo where it exists and FRED before it', () => {

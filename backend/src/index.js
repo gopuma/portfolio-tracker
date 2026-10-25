@@ -8,6 +8,7 @@ import { predictionsRouter } from './routes/predictions.js';
 import { portfolioRouter } from './routes/portfolio.js';
 import { refreshRouter } from './routes/refresh.js';
 import { goldGapRouter } from './routes/goldGap.js';
+import { bitcoinRouter } from './routes/bitcoin.js';
 import { analyticsRouter } from './routes/analytics.js';
 import { portfoliosRouter } from './routes/portfolios.js';
 import { auditRouter } from './routes/audit.js';
@@ -16,6 +17,7 @@ import { researchRouter } from './routes/research.js';
 import { stressRouter } from './routes/stress.js';
 import { projectionRouter } from './routes/projection.js';
 import { startDailyJob } from './jobs/dailyPriceJob.js';
+import { startCryptoJob } from './jobs/cryptoPriceJob.js';
 import { localRequestGuard, securityHeaders, ALLOWED_ORIGINS, CLIENT_HEADER } from './security.js';
 
 const app = express();
@@ -41,6 +43,7 @@ app.use('/api/predictions', predictionsRouter);
 app.use('/api/portfolio', portfolioRouter);
 app.use('/api/refresh', refreshRouter);
 app.use('/api/gold-gap', goldGapRouter);
+app.use('/api/bitcoin', bitcoinRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/portfolios', portfoliosRouter);
 app.use('/api/audit', auditRouter);
@@ -70,5 +73,6 @@ app.listen(PORT, HOST, () => {
   console.log(`Portfolio API listening on http://${HOST}:${PORT}`);
   if (process.env.NODE_ENV !== 'test') {
     startDailyJob();
+    startCryptoJob();
   }
 });

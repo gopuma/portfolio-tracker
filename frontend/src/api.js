@@ -69,6 +69,7 @@ export const api = {
   refreshAll:   (days)                   => post(`/refresh${daysQuery(days)}`),
   recompute:    (symbol)                 => post(`/predictions/${encodeURIComponent(symbol)}/recompute`),
   goldGap:      ()                       => get(`/gold-gap`),
+  bitcoin:      ()                       => get(`/bitcoin`),
   analytics:    (days = 365, rf = 0)     => get(`/analytics?days=${days}&rf=${rf}`),
   instrumentStats: (symbol, days = 365, rf = 0) => get(`/analytics/${encodeURIComponent(symbol)}?days=${days}&rf=${rf}`),
   optimize:     (symbols, days = 365, rf = 0) => postJson(`/analytics/optimize`, { symbols, days, rf }),

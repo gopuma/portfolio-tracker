@@ -12,8 +12,10 @@ const DEFAULT_DAYS = 730;
 const MIN_DAYS = 180;
 const MAX_DAYS = 1095;
 
-// The index the market move is expressed against.
-const US_INDEXES = { '^GSPC': 'S&P 500', '^IXIC': 'NASDAQ Composite' };
+// The index the market move is expressed against: a US index, or bitcoin for a crash (or
+// rally) that starts in crypto itself, which a stock index would understate.
+const US_INDEXES = { '^GSPC': 'S&P 500', '^IXIC': 'NASDAQ Composite', 'BTC-USD': 'Bitcoin' };
+const CRYPTO_INDEX = 'BTC-USD';
 
 // Weekly returns need at least this many overlapping weeks for a beta.
 const MIN_WEEKS = 26;
@@ -24,6 +26,9 @@ const MIN_WEEKS = 26;
 // (an index ETF, a T-bill fund) keeps its own value.
 const PRIOR_BETA = 1;
 const PRIOR_SD = 0.5;
+// Against bitcoin the cross-section is different: coins move with it about one-for-one,
+// while stocks, funds and gold have little to do with it, so their prior is 0.
+const PRIOR_BETA_VS_CRYPTO = { crypto: 1, other: 0 };
 
 const WEEKS_PER_YEAR = 52;
 
@@ -103,7 +108,7 @@ export async function valuedPortfolios(currency, fx) {
  * The shock itself is applied in the browser, so the size and length of the move can
  * change without a round trip.
  *
- * Query params: ?days=730 (180–1095), ?us_index=^GSPC|^IXIC, ?currency=USD|KRW.
+ * Query params: ?days=730 (180–1095), ?us_index=^GSPC|^IXIC|BTC-USD, ?currency=USD|KRW.
  */
 stressRouter.get('/', async (req, res, next) => {
   try {
@@ -139,19 +144,31 @@ stressRouter.get('/', async (req, res, next) => {
 
     const benchWeekly = weeklyReturns(await loadSeries(usIndex, days));
 
-    // One holding's factor, raw and shrunk.
-    const estimate = series => {
+    // The beta each holding is shrunk toward: 1 against a stock index; against bitcoin, 1
+    // for crypto and 0 for the rest.
+    const cryptoIndex = usIndex === CRYPTO_INDEX;
+    const cryptoHeld = new Set();
+    if (cryptoIndex && held.size) {
+      const syms = [...held.keys()];
+      const rows = await query(`SELECT symbol FROM instruments WHERE market = 'CRYPTO' AND symbol IN (${syms.map(() => '?').join(',')})`, syms);
+      for (const r of rows) cryptoHeld.add(r.symbol);
+    }
+    const priorFor = symbol => (!cryptoIndex ? PRIOR_BETA : cryptoHeld.has(symbol) ? PRIOR_BETA_VS_CRYPTO.crypto : PRIOR_BETA_VS_CRYPTO.other);
+
+    // One holding's factor, raw and shrunk toward `prior`.
+    const estimate = (series, prior) => {
       const r = regress(weeklyReturns(series), benchWeekly, MIN_WEEKS);
       if (r.beta == null) {
-        return { beta: PRIOR_BETA, beta_raw: null, beta_sd: PRIOR_SD, alpha: null, resid_sd: null, r2: null, n: r.n, assumed: true };
+        return { beta: prior, beta_raw: null, beta_sd: PRIOR_SD, prior, alpha: null, resid_sd: null, r2: null, n: r.n, assumed: true };
       }
       // Posterior of a normal prior and a normal estimate.
       const wData = 1 / (r.se_beta ** 2), wPrior = 1 / (PRIOR_SD ** 2);
-      const beta = (wData * r.beta + wPrior * PRIOR_BETA) / (wData + wPrior);
+      const beta = (wData * r.beta + wPrior * prior) / (wData + wPrior);
       return {
         beta,
         beta_raw: r.beta,
         beta_sd: Math.sqrt(1 / (wData + wPrior)),
+        prior,
         alpha: r.alpha * WEEKS_PER_YEAR,
         resid_sd: r.resid_sd,
         r2: r.r2,
@@ -172,7 +189,7 @@ stressRouter.get('/', async (req, res, next) => {
           : { beta: r.beta, beta_raw: r.beta, beta_sd: r.se_beta, alpha: null, resid_sd: r.resid_sd, r2: r.r2, n: r.n, assumed: false };
         continue;
       }
-      factors[symbol] = estimate(restate(await loadSeries(symbol, days), ccy));
+      factors[symbol] = estimate(restate(await loadSeries(symbol, days), ccy), priorFor(symbol));
     }
 
     // What the shock implies for KOSPI and the won, for the summary line. Raw betas.
@@ -182,7 +199,8 @@ stressRouter.get('/', async (req, res, next) => {
     res.json({
       days, currency,
       frequency: 'weekly',
-      prior: { beta: PRIOR_BETA, sd: PRIOR_SD },
+      // The prior for a holding with no factor of its own; each factor carries its own.
+      prior: { beta: cryptoIndex ? PRIOR_BETA_VS_CRYPTO.other : PRIOR_BETA, sd: PRIOR_SD },
       benchmark: { symbol: usIndex, name: US_INDEXES[usIndex] },
       us_indexes: Object.entries(US_INDEXES).map(([symbol, name]) => ({ symbol, name })),
       implied: {

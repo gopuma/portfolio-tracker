@@ -36,11 +36,18 @@ const SCENARIOS = [
   { key: 'covid-rally', kind: 'boom', label: 'Post-COVID rally 2020–22', index: '^GSPC', change: 114, days: 651, note: 'S&P 500, 23 Mar 2020 – 3 Jan 2022' },
   // Ends at the NASDAQ high in this app's own price history, so it moves with the data.
   { key: 'ai-boom', kind: 'boom', label: 'AI boom 2023–26', index: '^IXIC', change: 170, days: 1378, note: 'NASDAQ, 28 Dec 2022 – 6 Oct 2026, from the post-ChatGPT low' },
+  // Moves that started in crypto itself, expressed against bitcoin rather than a stock index.
+  { key: 'crypto-2018', kind: 'crypto', label: 'Crypto winter 2018', index: 'BTC-USD', change: -83.4, days: 364, note: 'Bitcoin, 16 Dec 2017 – 15 Dec 2018, after the 2017 bubble' },
+  { key: 'crypto-2022', kind: 'crypto', label: 'Crypto crash 2022', index: 'BTC-USD', change: -76.6, days: 378, note: 'Bitcoin, 8 Nov 2021 – 21 Nov 2022, through Terra/Luna and FTX' },
+  { key: 'crypto-2025', kind: 'crypto', label: 'Bitcoin slide 2025–26', index: 'BTC-USD', change: -53.1, days: 267, note: 'Bitcoin, 6 Oct 2025 – 30 Jun 2026, from its all-time high' },
+  { key: 'crypto-2023', kind: 'crypto', label: 'Bitcoin rally 2023–25', index: 'BTC-USD', change: 690, days: 1050, note: 'Bitcoin, 21 Nov 2022 – 6 Oct 2025, from the FTX low to its all-time high' },
 ];
 const SCENARIO_GROUPS = [
   { kind: 'crash', label: 'Crashes' },
   { kind: 'boom', label: 'Booms' },
+  { kind: 'crypto', label: 'Crypto' },
 ];
+const CRYPTO_INDEX = 'BTC-USD';
 // Slider reach; the number box goes further for anything more extreme.
 const SLIDER_MIN = -95;
 const SLIDER_MAX = 300;
@@ -125,10 +132,10 @@ function HoldingTooltip({ active, payload, ccy }) {
 }
 
 /**
- * Hypothetical shock across every portfolio. A move in one US index, down or up, is pushed
- * through each holding's beta to that index — measured on weekly returns in the display
- * currency and shrunk toward 1 by its uncertainty — with a one-standard-deviation range
- * around each result.
+ * Hypothetical shock across every portfolio. A move in one US index or in bitcoin, down or
+ * up, is pushed through each holding's beta to it — measured on weekly returns in the
+ * display currency and shrunk toward its prior by its uncertainty — with a
+ * one-standard-deviation range around each result.
  */
 function HypotheticalShock() {
   const [lookback, setLookback] = useState(730);
@@ -254,6 +261,8 @@ function HypotheticalShock() {
   }, [shown]);
 
   const usName = data?.us_indexes?.find(i => i.symbol === usIndex)?.name || usIndex;
+  // In running text: "the S&P 500", but plain "bitcoin".
+  const theIndex = usIndex === CRYPTO_INDEX ? 'bitcoin' : `the ${usName}`;
   const scenarioNote = SCENARIOS.find(s => s.key === scenario)?.note;
   const assumedCount = selected ? selected.holdings.filter(h => h.assumed).length : 0;
   // What the move implies for Korea, from KOSPI's and the won's own betas to the index.
@@ -275,7 +284,7 @@ function HypotheticalShock() {
                 {s.label} <span className={scenario === s.key ? '' : s.change < 0 ? 'down' : 'up'} style={{ opacity: 0.9 }}>{fmtChange(s.change)}</span>
               </button>
             ))}
-            {g.kind === 'boom' && (
+            {g.kind === 'crypto' && (
               <button className={`btn ${scenario === 'custom' ? '' : 'ghost'}`} onClick={() => setScenario('custom')}>Custom</button>
             )}
           </div>
@@ -301,7 +310,7 @@ function HypotheticalShock() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
           <span style={dimLabel}>Index</span>
-          {(data?.us_indexes || [{ symbol: '^GSPC', name: 'S&P 500' }, { symbol: '^IXIC', name: 'NASDAQ Composite' }]).map(i => (
+          {(data?.us_indexes || [{ symbol: '^GSPC', name: 'S&P 500' }, { symbol: '^IXIC', name: 'NASDAQ Composite' }, { symbol: CRYPTO_INDEX, name: 'Bitcoin' }]).map(i => (
             <button key={i.symbol} className={`btn ${usIndex === i.symbol ? '' : 'ghost'}`} onClick={() => editCustom(setUsIndex)(i.symbol)}>{i.name}</button>
           ))}
 
@@ -333,7 +342,7 @@ function HypotheticalShock() {
             <span style={{ color: 'var(--text-dim)' }}>
               <br />Implies KOSPI <span className={cls(kospiMove)}>{fmtPct(kospiMove)}</span>
               {wonMove != null && <> and the won <span className={cls(wonMove)}>{fmtPct(wonMove)}</span> against the dollar</>}
-              , from how they've moved with the {usName} over the last {lookbackLabel}
+              , from how they've moved with {theIndex} over the last {lookbackLabel}
             </span>
           )}
         </p>
@@ -446,7 +455,7 @@ function HypotheticalShock() {
                 <thead>
                   <tr>
                     <th>Holding</th>
-                    <th className="num" title={`Sensitivity to the ${usName}: 1.5 means it moves about 1.5% for each 1% move in the index. Shrunk toward 1 by how uncertain the estimate is; hover a value for the raw estimate`}>Beta</th>
+                    <th className="num" title={`Sensitivity to ${theIndex}: 1.5 means it moves about 1.5% for each 1% move in the index. Shrunk toward ${usIndex === CRYPTO_INDEX ? '1 for crypto and 0 for everything else' : '1'} by how uncertain the estimate is; hover a value for the raw estimate`}>Beta</th>
                     <th className="num" title="Annualized alpha: return beyond what beta explains. Only used when Include alpha is ticked">Alpha /yr</th>
                     <th className="num" title="Share of the holding's weekly moves the index explains. Low R² = the index is a weak guide to this holding, so its range is wide">R²</th>
                     <th className="num">Now</th>
@@ -493,13 +502,15 @@ function HypotheticalShock() {
           <div style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6, margin: '0 4px' }}>
             <p style={{ margin: '0 0 6px' }}>
               <strong style={{ color: 'var(--text)' }}>How this is estimated.</strong>{' '}
-              Each holding's beta is its sensitivity to the {usName}, measured from weekly returns over the last {lookbackLabel} — the usual basis for a published beta, and one that
+              Each holding's beta is its sensitivity to {theIndex}, measured from weekly returns over the last {lookbackLabel} — the usual basis for a published beta, and one that
               isn't thrown off by Seoul and New York closing at different hours. Returns are measured in {ccy}, so the exchange-rate move that tends to come with a market move is
-              included: a Korean stock or won cash seen in dollars carries the won's tendency to weaken in a sell-off. Korean holdings are measured against the {usName} directly,
+              included: a Korean stock or won cash seen in dollars carries the won's tendency to weaken in a sell-off. Korean holdings are measured against {theIndex} directly,
               which is what a move in that index implies for them, rather than assuming KOSPI moves by the same amount.
             </p>
             <p style={{ margin: '0 0 6px' }}>
-              Every beta is then shrunk toward 1, the average stock's, in proportion to how uncertain it is (the Vasicek adjustment): a tightly measured index fund keeps its own
+              Every beta is then shrunk toward {usIndex === CRYPTO_INDEX
+                ? <>1 for crypto, which moves with bitcoin about one-for-one, and 0 for stocks, funds and gold, which mostly don't,</>
+                : <>1, the average stock's,</>} in proportion to how uncertain it is (the Vasicek adjustment): a tightly measured index fund keeps its own
               value while a short or erratic history leans on the average. Holdings move by (1 + change)<sup>β</sup>, which matches β × change for small moves and can't fall
               past −100% in a deep one. Alpha is assumed to be zero — past outperformance over a couple of years is mostly noise — unless Include alpha is ticked.
             </p>

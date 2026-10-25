@@ -4,6 +4,7 @@
  */
 
 export const TRADING_DAYS = 252;   // annualization factor
+export const CALENDAR_DAYS = 365;  // for crypto, which trades every day
 export const MIN_RETURNS = 20;     // minimum observations to report a stat
 
 const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
@@ -22,7 +23,9 @@ export function toReturns(series) {
 }
 
 // Per-asset return & risk stats. Returns null when there isn't enough data.
-export function riskStats(series, rf = 0) {
+// `periodsPerYear` is how many daily returns make a year: 252 trading days, or 365 for an
+// asset that trades every day.
+export function riskStats(series, rf = 0, periodsPerYear = TRADING_DAYS) {
   if (!series || series.length < MIN_RETURNS + 1) return null;
   const closes = series.map(s => s.close);
   const { rets } = toReturns(series);
@@ -34,7 +37,7 @@ export function riskStats(series, rf = 0) {
   const sd = Math.sqrt(variance);
 
   // Downside deviation: only returns below the daily MAR (risk-free) contribute.
-  const dailyMar = rf / TRADING_DAYS;
+  const dailyMar = rf / periodsPerYear;
   const downVar = rets.reduce((a, r) => a + Math.min(r - dailyMar, 0) ** 2, 0) / n;
   const downsideDev = Math.sqrt(downVar);
 
@@ -47,16 +50,16 @@ export function riskStats(series, rf = 0) {
     if (dd < maxDd) maxDd = dd;
   }
 
-  const annMean = mean * TRADING_DAYS;
-  const vol = sd * Math.sqrt(TRADING_DAYS);
-  const downsideAnn = downsideDev * Math.sqrt(TRADING_DAYS);
+  const annMean = mean * periodsPerYear;
+  const vol = sd * Math.sqrt(periodsPerYear);
+  const downsideAnn = downsideDev * Math.sqrt(periodsPerYear);
   const first = closes[0];
   const last = closes[closes.length - 1];
 
   return {
     n,
     total_return: last / first - 1,
-    cagr: first > 0 ? (last / first) ** (TRADING_DAYS / n) - 1 : null,
+    cagr: first > 0 ? (last / first) ** (periodsPerYear / n) - 1 : null,
     ann_mean_return: annMean,
     vol,
     downside_dev: downsideAnn,

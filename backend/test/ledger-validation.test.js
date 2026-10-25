@@ -61,6 +61,8 @@ test('parseTradeDate: rejects garbage, impossible, future, and missing-required 
 
 test('parseShares / parsePrice: bounds follow the DECIMAL columns', () => {
   assert.equal(parseShares('12.5'), 12.5);
+  assert.equal(parseShares('0.00000001'), 1e-8); // one satoshi: DECIMAL(26,8)
+  rejects400(() => parseShares(0.000000001), /at least/); // would round to 0
   assert.equal(parseShares(0, 'shares', { allowZero: true }), 0);
   rejects400(() => parseShares(0));
   rejects400(() => parseShares(-1));
