@@ -57,6 +57,12 @@ export default function BackfillBar({ onDone }) {
   };
 
   const daily = status?.daily;
+  // Prices last came in from whichever finished later: the nightly job or a manual Backfill.
+  const manual = status?.manual;
+  const manualLater = manual?.last_finished_at && (!daily?.last_finished_at || manual.last_finished_at > daily.last_finished_at);
+  const lastUpdate = manualLater ? manual.last_finished_at : daily?.last_finished_at;
+  const lastNote = manualLater ? ` (manual, ${manual.last_reason || ''})`.replace(', )', ')')
+    : daily?.last_reason === 'catch-up' ? ' (catch-up)' : '';
   const stale = status?.stale || [];
   const dim = { fontSize: 12, color: 'var(--text-dim)' };
 
@@ -72,7 +78,7 @@ export default function BackfillBar({ onDone }) {
               {stale.length ? `${stale.length} of ${status.instruments} behind` : `All ${status.instruments} up to date`}
             </span>
             <span style={dim}>
-              Last update {fmtWhen(daily?.last_finished_at)}{daily?.last_reason === 'catch-up' ? ' (catch-up)' : ''}
+              Last update {fmtWhen(lastUpdate)}{lastNote}
               {' · '}next {fmtWhen(daily?.next_run)}
               {status.crypto?.last_finished_at && <> · crypto hourly, last {fmtWhen(status.crypto.last_finished_at)}</>}
             </span>

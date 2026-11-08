@@ -64,6 +64,7 @@ export default function FxRateCard({
   title = 'KRW / USD Exchange Rate',
   unit = 'KRW per USD',
   pairShort = 'KRW/USD',
+  reloadKey = 0, // bumped by the Overview to re-fetch the stored series
 }) {
   const [days, setDays] = useState(180); // default: last 6 months
   const [draft, setDraft] = useState('180'); // custom-period input buffer
@@ -98,7 +99,7 @@ export default function FxRateCard({
       .catch(e => { if (!cancelled) setErr(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [symbol, days]);
+  }, [symbol, days, reloadKey]);
 
   // Fetch the whole series once so the 1Y/3Y/5Y averages stay fixed
   // regardless of the chart's selected period.
@@ -108,11 +109,11 @@ export default function FxRateCard({
       .then(d => { if (!cancelled) setHistory(d.prices || []); })
       .catch(() => { /* averages just show – if this fails */ });
     return () => { cancelled = true; };
-  }, [symbol]);
+  }, [symbol, reloadKey]);
 
   // On load, pull the live rate automatically (live while the FX market is open, else
   // the latest close) so the card reflects the current rate without a manual click.
-  useEffect(() => { getLive(); /* eslint-disable-next-line */ }, [symbol]);
+  useEffect(() => { getLive(); /* eslint-disable-next-line */ }, [symbol, reloadKey]);
 
   // Average close over the most recent N days of the 5y history.
   const averages = useMemo(() => {
@@ -248,7 +249,7 @@ export default function FxRateCard({
         </div>
       )}
 
-      {loading ? (
+      {loading && !data ? (
         <div className="loading">Loading exchange rate…</div>
       ) : err ? (
         <div className="error">Failed to load: {err}</div>

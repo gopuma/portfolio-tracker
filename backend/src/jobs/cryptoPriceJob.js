@@ -10,12 +10,18 @@ const CRON = process.env.CRON_CRYPTO_REFRESH || '5 * * * *';
 const TIMEZONE = 'Asia/Seoul';
 const DAYS = 3;
 const JOB_NAME = 'crypto-refresh';
+// A missed hourly firing (the computer was asleep) is caught up by this check, which runs
+// once the last run is more than an hour and a bit old.
+const CATCH_UP_CHECK_MS = 10 * 60 * 1000;
+const CATCH_UP_AFTER_MS = 65 * 60 * 1000;
 
 let running = false;
+let lastRunAt = 0;
 
 export async function runCryptoRefresh(reason = 'scheduled') {
   if (running) return;
   running = true;
+  lastRunAt = Date.now();
   try {
     await query(
       `INSERT INTO job_runs (name, last_started_at, last_reason) VALUES (?, ?, ?)
@@ -44,4 +50,7 @@ export function startCryptoJob() {
   cron.schedule(CRON, () => runCryptoRefresh('scheduled'), { timezone: TIMEZONE, noOverlap: true });
   // Not awaited: catch up on whatever moved while the backend was down.
   runCryptoRefresh('startup');
+  setInterval(() => {
+    if (Date.now() - lastRunAt > CATCH_UP_AFTER_MS) runCryptoRefresh('catch-up');
+  }, CATCH_UP_CHECK_MS);
 }

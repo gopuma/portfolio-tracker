@@ -14,23 +14,27 @@ const CRON = process.env.CRON_DAILY_REFRESH || '30 6 * * 2-6';
 const TIMEZONE = 'Asia/Seoul';
 const JOB_NAME = 'daily-refresh';
 
-// How far back startup looks for a scheduled run it may have missed. Each run fetches back
+// How far back the catch-up check looks for a scheduled run it may have missed. Each run fetches back
 // to every instrument's last stored price (see refreshDays), so one catch-up run fills the
 // gap however long the backend was off.
 const CATCH_UP_LOOKBACK_DAYS = 7;
 // A run that started but never finished (the backend was stopped or restarted mid-run)
 // counts as missed once it is this old; younger than that it may still be going.
 const STALE_RUN_MS = 30 * 60 * 1000;
+// node-cron never replays a firing that came due while the computer slept, so besides at
+// startup the catch-up check also runs on this interval; after a wake it fires within this.
+const CATCH_UP_CHECK_MS = 10 * 60 * 1000;
 
 const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 
-// How far back each run fetches. Normally a week, which re-checks the last few closes. A
-// gap longer than that (the backend was off for a while) is fetched back to the last
-// stored price, and an instrument with next to no rows (its first five-year backfill, when
+// How far back each run fetches. Normally a month: one request either way, and re-checking
+// the whole month fills any day a run or a short manual backfill skipped, not only those
+// after the latest stored price. A gap longer than that (the backend was off for a while)
+// is fetched back to the last stored price, and an instrument with next to no rows (its first five-year backfill, when
 // it was added, failed) gets those five years. Fewer than 20 rows rather than none, but not
 // "under a year": a fund listed a few months ago has only that much history to give.
-export const REFRESH_DAYS = 7;
+export const REFRESH_DAYS = 31;
 export const GAP_MARGIN_DAYS = 3;
 export const THIN_HISTORY_ROWS = 20;
 export const DEEP_BACKFILL_DAYS = 1825;
@@ -172,15 +176,16 @@ export async function runDailyRefresh(reason = 'scheduled') {
   }
 }
 
-// On startup: if the backend was down when the job last should have run, run it now.
-// node-cron only fires on schedule and never replays a missed time on its own.
+// At startup and every CATCH_UP_CHECK_MS: if the backend was down or the computer asleep
+// when the job last should have run, run it now. node-cron only fires on schedule and
+// never replays a missed time on its own.
 async function catchUpIfMissed(task) {
   try {
     const scheduledAt = previousScheduledRun(d => task.match(d));
     const [row] = await query(`SELECT last_started_at, last_finished_at FROM job_runs WHERE name = ?`, [JOB_NAME]);
     const missed = missedRun({ scheduledAt, lastStartedAt: row?.last_started_at, lastFinishedAt: row?.last_finished_at });
     if (!missed) return;
-    console.log(`[cron] Missed the run scheduled for ${scheduledAt.toISOString()} (backend was down) — catching up now.`);
+    console.log(`[cron] Missed the run scheduled for ${scheduledAt.toISOString()} (backend down or computer asleep) — catching up now.`);
     await runDailyRefresh('catch-up');
   } catch (e) {
     console.error('[cron] Catch-up check failed:', e.message);
@@ -204,4 +209,5 @@ export function startDailyJob() {
   });
   // Not awaited: the API starts serving while a catch-up run works in the background.
   catchUpIfMissed(task);
+  setInterval(() => catchUpIfMissed(task), CATCH_UP_CHECK_MS);
 }

@@ -45,7 +45,7 @@ function fmtKstTime(iso) {
   return d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false });
 }
 
-export default function GoldGapPanel() {
+export default function GoldGapPanel({ reloadKey = 0 }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [krxHist, setKrxHist] = useState(null);
@@ -60,12 +60,13 @@ export default function GoldGapPanel() {
     return () => clearInterval(id);
   }, []);
 
-  // Fetch full history once for the 1Y/3Y/5Y averages (fixed, independent of live data).
+  // Full history for the chart and the 1Y/3Y/5Y averages, independent of the live data;
+  // fetched again when the Overview bumps reloadKey.
   useEffect(() => {
     api.prices(KRX_SYMBOL, MAX_DAYS).then(d => setKrxHist(d.prices || [])).catch(() => {});
     api.prices(INTL_SYMBOL, MAX_DAYS).then(d => setIntlHist(d.prices || [])).catch(() => {});
     api.prices(FX_SYMBOL, MAX_DAYS).then(d => setFxHist(d.prices || [])).catch(() => {});
-  }, []);
+  }, [reloadKey]);
 
   const krxRows = useMemo(() => rowsOf(krxHist), [krxHist]);
   // International gold in KRW/g at each day's exchange rate, so both share one unit.

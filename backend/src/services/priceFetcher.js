@@ -111,6 +111,17 @@ export async function fetchQuotes(symbols) {
   }
 }
 
+/**
+ * A close can't lie outside the day's own low–high range, but Yahoo's FX pairs sometimes
+ * report one that does: a stale snapshot, e.g. KRW=X on 2026-11-02 closing at 1325.52 under
+ * a low of 1334.23, which drew a one-day dip that never traded. Clamp to the nearer bound.
+ * A bar with a missing or inverted range is left alone.
+ */
+export function clampClose(close, low, high) {
+  if (close == null || low == null || high == null || !(low > 0) || low > high) return close;
+  return Math.min(Math.max(close, low), high);
+}
+
 // en-CA formats as YYYY-MM-DD. Formatters are cached per timezone — building one is slow.
 const dateFormatters = new Map();
 function formatterFor(timeZone) {
@@ -130,7 +141,8 @@ function formatterFor(timeZone) {
  * reading filed every summer bar one day early, including onto Sundays.
  *
  * Bars without a close are dropped. If two bars land on the same date (a finished session
- * plus Yahoo's in-progress one), the later wins.
+ * plus Yahoo's in-progress one), the later wins. A close outside the bar's own low–high
+ * range is clamped into it (see clampClose).
  */
 export function quotesToBars(quotes, timeZone) {
   let fmt;
@@ -147,7 +159,7 @@ export function quotesToBars(quotes, timeZone) {
     .map(([trade_date, q]) => ({
       trade_date,
       open_px: q.open ?? null, high_px: q.high ?? null, low_px: q.low ?? null,
-      close_px: q.close, volume: q.volume ?? null,
+      close_px: clampClose(q.close, q.low, q.high), volume: q.volume ?? null,
       // Split- and dividend-adjusted close. Not stored in `prices`; the historical replay
       // uses it so a holding's return over a past event includes what it paid out.
       adj_close: q.adjclose ?? null,

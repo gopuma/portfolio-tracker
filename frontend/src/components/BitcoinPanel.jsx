@@ -46,7 +46,7 @@ function fmtKstTime(iso) {
  * in won), the Korean premium between them, and their price history. Laid out like the
  * gold panel above it.
  */
-export default function BitcoinPanel() {
+export default function BitcoinPanel({ reloadKey = 0 }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [upbitHist, setUpbitHist] = useState(null);
@@ -65,7 +65,7 @@ export default function BitcoinPanel() {
     api.prices(UPBIT_SYMBOL, MAX_DAYS).then(d => setUpbitHist(d.prices || [])).catch(() => {});
     api.prices(GLOBAL_SYMBOL, MAX_DAYS).then(d => setGlobalHist(d.prices || [])).catch(() => {});
     api.prices(FX_SYMBOL, MAX_DAYS).then(d => setFxHist(d.prices || [])).catch(() => {});
-  }, []);
+  }, [reloadKey]);
 
   const upbitRows = useMemo(() => rowsOf(upbitHist), [upbitHist]);
   // Global bitcoin in won at each day's exchange rate, so both share one unit.

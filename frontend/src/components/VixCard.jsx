@@ -39,7 +39,7 @@ function regime(v) {
   return { label: 'Extreme — panic', cls: 'down', color: 'var(--red)' };
 }
 
-export default function VixCard() {
+export default function VixCard({ reloadKey = 0 }) {
   const [days, setDays] = useState(180);
   const [draft, setDraft] = useState('180');
   const [data, setData] = useState(null);
@@ -57,7 +57,7 @@ export default function VixCard() {
       .catch(e => { if (!cancelled) setErr(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [days]);
+  }, [days, reloadKey]);
 
   // On every load, pull a live quote: shows the live level while the market is open,
   // otherwise the latest close. Independent of the chart's period selector.
@@ -67,7 +67,7 @@ export default function VixCard() {
       .then(d => { if (!cancelled) setQuote(d.quotes?.['^VIX'] || null); })
       .catch(() => { /* fall back to the chart's last close below */ });
     return () => { cancelled = true; };
-  }, []);
+  }, [reloadKey]);
 
   const chartData = useMemo(
     () => (data?.prices || []).map(p => ({ date: (p.trade_date || '').slice(0, 10), vix: Number(p.close_px) })),
@@ -134,7 +134,7 @@ export default function VixCard() {
         )}
       </div>
 
-      {loading ? (
+      {loading && !data ? (
         <div className="loading">Loading VIX…</div>
       ) : err ? (
         <div className="error">Failed to load: {err}</div>
