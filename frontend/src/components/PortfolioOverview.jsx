@@ -6,11 +6,14 @@ import VixCard from './VixCard.jsx';
 import BackfillBar from './BackfillBar.jsx';
 import IndexCards from './IndexCards.jsx';
 
-// Market overview: major indices, FX, volatility, gold-gap, bitcoin, and the price backfill control.
+// Market overview: price-update status and backfill control on top, then major indices, FX,
+// volatility, gold-gap and bitcoin.
 // Per-instrument return/risk analytics now live on each portfolio's detail page.
 export default function PortfolioOverview() {
   return (
     <>
+      <BackfillBar />
+
       <RetirementCountdown />
 
       <IndexCards />
@@ -20,8 +23,6 @@ export default function PortfolioOverview() {
       <FxRateCard symbol="JPYKRW=X" title="KRW / JPY Exchange Rate" unit="KRW per JPY" pairShort="KRW/JPY" />
 
       <VixCard />
-
-      <BackfillBar />
 
       <GoldGapPanel />
 

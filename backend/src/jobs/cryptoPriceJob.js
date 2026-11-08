@@ -9,6 +9,7 @@ import { fetchAndStorePrices } from '../services/priceDispatcher.js';
 const CRON = process.env.CRON_CRYPTO_REFRESH || '5 * * * *';
 const TIMEZONE = 'Asia/Seoul';
 const DAYS = 3;
+const JOB_NAME = 'crypto-refresh';
 
 let running = false;
 
@@ -16,6 +17,11 @@ export async function runCryptoRefresh(reason = 'scheduled') {
   if (running) return;
   running = true;
   try {
+    await query(
+      `INSERT INTO job_runs (name, last_started_at, last_reason) VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE last_started_at = VALUES(last_started_at), last_reason = VALUES(last_reason)`,
+      [JOB_NAME, new Date(), reason]
+    );
     const rows = await query(`SELECT * FROM instruments WHERE is_active = 1 AND market = 'CRYPTO' ORDER BY symbol`);
     for (const inst of rows) {
       try {
@@ -25,6 +31,7 @@ export async function runCryptoRefresh(reason = 'scheduled') {
         console.error(`[cron][crypto] ${inst.symbol} failed:`, e.message);
       }
     }
+    await query(`UPDATE job_runs SET last_finished_at = ? WHERE name = ?`, [new Date(), JOB_NAME]);
   } catch (e) {
     console.error('[cron][crypto] refresh failed:', e.message);
   } finally {

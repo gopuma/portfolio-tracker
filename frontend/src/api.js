@@ -67,6 +67,7 @@ export const api = {
   prediction:   (symbol)                 => get(`/predictions/${encodeURIComponent(symbol)}`),
   refresh:      (symbol, days)           => post(`/refresh/${encodeURIComponent(symbol)}${daysQuery(days)}`),
   refreshAll:   (days)                   => post(`/refresh${daysQuery(days)}`),
+  refreshStatus: ()                     => get(`/refresh/status`),
   recompute:    (symbol)                 => post(`/predictions/${encodeURIComponent(symbol)}/recompute`),
   goldGap:      ()                       => get(`/gold-gap`),
   bitcoin:      ()                       => get(`/bitcoin`),
