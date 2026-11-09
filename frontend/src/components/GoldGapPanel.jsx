@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ComposedChart, LineChart, Line, Area, Brush, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { api } from '../api.js';
 import { rowsOf, intlKrwPerGram, mergeGold, averages, axisRange } from '../goldSeries.js';
+import { t, locale } from '../i18n.jsx';
 
 const KRX_SYMBOL = 'KRX-GOLD-SPOT';
 const INTL_SYMBOL = 'GC=F';
@@ -34,8 +35,8 @@ function AsOf({ date }) {
   if (!date) return null;
   const dt = new Date(`${String(date).slice(0, 10)}T00:00:00`);
   if (isNaN(dt.getTime())) return null;
-  const s = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  return <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>Data as of {s}</span>;
+  const s = dt.toLocaleDateString(locale(), { month: 'short', day: 'numeric', year: 'numeric' });
+  return <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{t('Data as of {date}', { date: s })}</span>;
 }
 
 function fmtKstTime(iso) {
@@ -117,8 +118,8 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
     setDays(Math.min(n, MAX_DAYS));
   };
 
-  if (err) return <div className="panel"><h2>Gold Gap</h2><div className="error">Failed: {err}</div></div>;
-  if (!data) return <div className="panel"><h2>Gold Gap</h2><div className="loading">Loading…</div></div>;
+  if (err) return <div className="panel"><h2>{t('Gold Gap')}</h2><div className="error">{t('Failed: {err}', { err })}</div></div>;
+  if (!data) return <div className="panel"><h2>{t('Gold Gap')}</h2><div className="loading">{t('Loading…')}</div></div>;
 
   const { krx, intl, fx, gap } = data;
   const pct = gap?.premium_pct;
@@ -128,18 +129,18 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
   const liveColor = liveDir === 'RISING' ? 'up' : liveDir === 'FALLING' ? 'down' : '';
   const arrow = liveDir === 'RISING' ? '▲' : liveDir === 'FALLING' ? '▼' : '';
   const statusPill = live?.market_status === 'OPEN'
-    ? <span className="pill green" style={{ marginLeft: 8 }}>LIVE</span>
-    : <span className="pill" style={{ marginLeft: 8 }}>CLOSE</span>;
+    ? <span className="pill green" style={{ marginLeft: 8 }}>{t('LIVE')}</span>
+    : <span className="pill" style={{ marginLeft: 8 }}>{t('CLOSE')}</span>;
 
   return (
     <div className="panel">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <h2 style={{ margin: 0 }}>Gold: KRX vs International</h2>
+        <h2 style={{ margin: 0 }}>{t('Gold: KRX vs International')}</h2>
         <AsOf date={lastDataDate} />
       </div>
       <div className="grid-3" style={{ marginTop: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <div className="metric-label">KRX (Korean Market) {live ? statusPill : null}</div>
+          <div className="metric-label">{t('KRX (Korean Market)')} {live ? statusPill : null}</div>
           <div className="metric">{fmtNum(krx.latest_krw_per_g, 2)} <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>KRW/g</span></div>
           {live ? (
             <div style={{ fontSize: 12, marginTop: 2 }}>
@@ -150,48 +151,48 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
             {krx.display_name} · {krx.symbol}
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>
-            {live ? `as of ${fmtKstTime(live.local_traded_at)} KST` : null}
+            {live ? t('as of {time} KST', { time: fmtKstTime(live.local_traded_at) }) : null}
           </div>
           <div style={{ fontSize: 12, marginTop: 4 }}>
-            30d: <span className={krx.return_30d > 0 ? 'up' : krx.return_30d < 0 ? 'down' : ''}>{fmtPct(krx.return_30d)}</span>
+            {t('30d:')} <span className={krx.return_30d > 0 ? 'up' : krx.return_30d < 0 ? 'down' : ''}>{fmtPct(krx.return_30d)}</span>
           </div>
           <AvgBlock avgs={krxAvgs} current={krx.latest_krw_per_g} unit="KRW/g" digits={0} />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <div className="metric-label">International (US Market)</div>
+          <div className="metric-label">{t('International (US Market)')}</div>
           <div className="metric">{fmtNum(intl.latest_usd_per_oz, 2)} <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>USD/oz</span></div>
           <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
             {intl.display_name} · {intl.symbol}
           </div>
           <div style={{ fontSize: 12, marginTop: 4 }}>
-            30d: <span className={intl.return_30d > 0 ? 'up' : intl.return_30d < 0 ? 'down' : ''}>{fmtPct(intl.return_30d)}</span>
+            {t('30d:')} <span className={intl.return_30d > 0 ? 'up' : intl.return_30d < 0 ? 'down' : ''}>{fmtPct(intl.return_30d)}</span>
             {intl.return_30d_krw != null && (
               <span style={{ color: 'var(--text-dim)' }}>
-                {' '}· in KRW <span className={intl.return_30d_krw > 0 ? 'up' : intl.return_30d_krw < 0 ? 'down' : ''}>{fmtPct(intl.return_30d_krw)}</span>
+                {' '}· {t('in KRW')} <span className={intl.return_30d_krw > 0 ? 'up' : intl.return_30d_krw < 0 ? 'down' : ''}>{fmtPct(intl.return_30d_krw)}</span>
               </span>
             )}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>
-            ≈ {fmtNum(intl.latest_krw_per_g, 0)} KRW/g at today's rate
+            ≈ {t('{v} KRW/g at today\'s rate', { v: fmtNum(intl.latest_krw_per_g, 0) })}
           </div>
           <AvgBlock avgs={intlAvgs} current={intl.latest_krw_per_g} unit="KRW/g" digits={0} />
         </div>
 
         <div>
-          <div className="metric-label">Korean Premium (KRX − Intl)</div>
+          <div className="metric-label">{t('Korean Premium (KRX − Intl)')}</div>
           <div className={`metric ${pctColor}`}>{fmtPct(pct)}</div>
           <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
             {fmtNum(gap?.premium_krw_per_g, 0)} KRW/g · USD/KRW {fmtNum(fx.krw_per_usd, 2)}
           </div>
           <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-dim)' }}>
-            30d return diff (both in KRW): <span className={gap?.return_30d_diff > 0 ? 'up' : 'down'}>{fmtPct(gap?.return_30d_diff)}</span>
+            {t('30d return diff (both in KRW):')} <span className={gap?.return_30d_diff > 0 ? 'up' : 'down'}>{fmtPct(gap?.return_30d_diff)}</span>
           </div>
         </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginTop: 16 }}>
-        <h3 style={{ margin: 0 }}>Price Trend</h3>
+        <h3 style={{ margin: 0 }}>{t('Price Trend')}</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {PRESETS.map(p => (
             <button
@@ -199,7 +200,7 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
               className={`btn ${days === p.days ? '' : 'ghost'}`}
               onClick={() => { setDays(p.days); setDraft(String(p.days)); }}
             >
-              {p.label}
+              {t(p.label)}
             </button>
           ))}
           <input
@@ -220,13 +221,13 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
               fontVariantNumeric: 'tabular-nums',
             }}
           />
-          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>days</span>
-          <button className="btn" onClick={applyDraft}>Apply</button>
+          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{t('days')}</span>
+          <button className="btn" onClick={applyDraft}>{t('Apply')}</button>
         </div>
       </div>
 
       {chartData.length === 0 ? (
-        <div className="loading">No price history yet.</div>
+        <div className="loading">{t('No price history yet.')}</div>
       ) : (
         <>
           <div style={{ width: '100%', height: 420, marginTop: 12 }}>
@@ -241,10 +242,10 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} verticalAlign="top" />
                 {/* The gap itself, shaded: amber where KRX is above, blue where below. */}
-                <Area type="monotone" dataKey="above" name="KRX above" fill={KRX_COLOR} fillOpacity={0.45} stroke="none" legendType="square" tooltipType="none" connectNulls isAnimationActive={false} />
-                <Area type="monotone" dataKey="below" name="KRX below" fill={INTL_COLOR} fillOpacity={0.45} stroke="none" legendType="square" tooltipType="none" connectNulls isAnimationActive={false} />
+                <Area type="monotone" dataKey="above" name={t('KRX above')} fill={KRX_COLOR} fillOpacity={0.45} stroke="none" legendType="square" tooltipType="none" connectNulls isAnimationActive={false} />
+                <Area type="monotone" dataKey="below" name={t('KRX below')} fill={INTL_COLOR} fillOpacity={0.45} stroke="none" legendType="square" tooltipType="none" connectNulls isAnimationActive={false} />
                 <Line type="monotone" dataKey="krx" name="KRX" stroke={KRX_COLOR} dot={false} strokeWidth={1.5} connectNulls isAnimationActive={false} />
-                <Line type="monotone" dataKey="intl" name="International (in KRW)" stroke={INTL_COLOR} dot={false} strokeWidth={1.5} connectNulls isAnimationActive={false} />
+                <Line type="monotone" dataKey="intl" name={t('International (in KRW)')} stroke={INTL_COLOR} dot={false} strokeWidth={1.5} connectNulls isAnimationActive={false} />
                 <Brush
                   key={days}
                   dataKey="date"
@@ -261,15 +262,15 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
             </ResponsiveContainer>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
-            International gold (USD/oz) converted to KRW/g at each day's USD/KRW rate. Drag the slider's ends to zoom into a stretch of time; the scale refits so the gap shows more.
+            {t("International gold (USD/oz) converted to KRW/g at each day's USD/KRW rate. Drag the slider's ends to zoom into a stretch of time; the scale refits so the gap shows more.")}
           </div>
 
           {premiumData.length > 0 && (
             <>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginTop: 16 }}>
-                <h3 style={{ margin: 0 }}>Korean Premium</h3>
+                <h3 style={{ margin: 0 }}>{t('Korean Premium')}</h3>
                 <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
-                  average over {win ? `${shown[0]?.date} – ${shown[shown.length - 1]?.date}` : 'the period'} <span className={avgPremium > 0 ? 'up' : avgPremium < 0 ? 'down' : ''}>{fmtPct(avgPremium)}</span>
+                  {t('average over {range}', { range: win ? `${shown[0]?.date} – ${shown[shown.length - 1]?.date}` : t('the period') })} <span className={avgPremium > 0 ? 'up' : avgPremium < 0 ? 'down' : ''}>{fmtPct(avgPremium)}</span>
                 </span>
               </div>
               <div style={{ width: '100%', height: 220, marginTop: 8 }}>
@@ -280,7 +281,7 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
                     <YAxis stroke="#9aa0a6" fontSize={11} domain={premiumAxis.domain} ticks={premiumAxis.ticks} allowDataOverflow tickFormatter={v => fmtPct(v, 1)} width={64} />
                     <Tooltip
                       contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }}
-                      formatter={v => [fmtPct(v), 'KRX over international']}
+                      formatter={v => [fmtPct(v), t('KRX over international')]}
                     />
                     <ReferenceLine y={0} stroke="#9aa0a6" />
                     <Line type="monotone" dataKey="premium" stroke={KRX_COLOR} dot={false} strokeWidth={1.5} />
@@ -288,8 +289,8 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
                 </ResponsiveContainer>
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
-                KRX closes in the Seoul afternoon and international gold in the New York evening, so part of each day's premium is that day's price move.
-                {premiumAxis.clipped > 0 && ` ${premiumAxis.clipped} unusual ${premiumAxis.clipped === 1 ? 'day runs' : 'days run'} off the scale; hover for the value.`}
+                {t("KRX closes in the Seoul afternoon and international gold in the New York evening, so part of each day's premium is that day's price move.")}
+                {premiumAxis.clipped > 0 && ` ${t(premiumAxis.clipped === 1 ? '{n} unusual day runs off the scale; hover for the value.' : '{n} unusual days run off the scale; hover for the value.', { n: premiumAxis.clipped })}`}
               </div>
             </>
           )}
@@ -313,7 +314,7 @@ function AvgBlock({ avgs, current, unit, digits = 2 }) {
         const color = diff == null ? '' : diff > 0 ? 'up' : diff < 0 ? 'down' : '';
         return (
           <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
-            <span style={{ color: 'var(--text-dim)' }}>{label}</span>
+            <span style={{ color: 'var(--text-dim)' }}>{t(label)}</span>
             <span>
               {fmtNum(v, digits)} <span style={{ color: 'var(--text-dim)', fontSize: 10 }}>{unit}</span>
               {diff != null && <span className={color} style={{ marginLeft: 6 }}>{diff > 0 ? '+' : ''}{fmtPct(diff)}</span>}

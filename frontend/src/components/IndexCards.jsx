@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { t, locale } from '../i18n.jsx';
 
 function fmtNum(n, d = 2) {
   if (n == null || isNaN(n)) return '–';
@@ -64,7 +65,7 @@ function IndexCard({ symbol, label, unit, quote, loading, err }) {
   return (
     <div className="panel">
       <div className="metric-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <span>{label}</span>
+        <span>{t(label)}</span>
         <span style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'none', letterSpacing: 0 }}>{symbol}</span>
       </div>
 
@@ -72,7 +73,7 @@ function IndexCard({ symbol, label, unit, quote, loading, err }) {
         <div className="metric" style={{ color: 'var(--text-dim)' }}>…</div>
       ) : price == null ? (
         <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 8 }}>
-          {err ? `Failed: ${err}` : <>No data — backfill <code>{symbol}</code>.</>}
+          {err ? t('Failed: {err}', { err }) : <>{t('No data — backfill')} <code>{symbol}</code>.</>}
         </div>
       ) : (
         <>
@@ -81,7 +82,7 @@ function IndexCard({ symbol, label, unit, quote, loading, err }) {
           </div>
           <div className={color} style={{ fontSize: 14, marginTop: 2 }}>
             {change == null ? (
-              <span style={{ color: 'var(--text-dim)' }}>– no prior close</span>
+              <span style={{ color: 'var(--text-dim)' }}>{t('– no prior close')}</span>
             ) : (
               <>
                 {change > 0 ? '▲' : change < 0 ? '▼' : ''} {fmtNum(Math.abs(change))} ({fmtPct(changePct == null ? null : Math.abs(changePct))})
@@ -101,17 +102,17 @@ function MarketState({ open, quote }) {
     return (
       <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />
-        LIVE
+        {t('LIVE')}
       </div>
     );
   }
   const when = quote?.time ? new Date(quote.time) : null;
   const label = when && !isNaN(when.getTime())
-    ? when.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    ? when.toLocaleDateString(locale(), { month: 'short', day: 'numeric' })
     : null;
   return (
     <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
-      At close{label ? ` · ${label}` : ''}
+      {t('At close')}{label ? ` · ${label}` : ''}
     </div>
   );
 }

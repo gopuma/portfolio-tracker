@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { t, locale } from '../i18n.jsx';
 
 const STATUS_POLL_MS = 5 * 60_000;
 
@@ -7,7 +8,7 @@ const STATUS_POLL_MS = 5 * 60_000;
 function fmtWhen(iso) {
   if (!iso) return '–';
   const d = new Date(iso);
-  return d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(locale(), { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 /**
@@ -34,8 +35,8 @@ export default function BackfillBar({ onDone }) {
   const loadStatus = () => api.refreshStatus().then(setStatus).catch(() => {});
   useEffect(() => {
     loadStatus();
-    const t = setInterval(loadStatus, STATUS_POLL_MS);
-    return () => clearInterval(t);
+    const timer = setInterval(loadStatus, STATUS_POLL_MS);
+    return () => clearInterval(timer);
   }, []);
 
   const run = async () => {
@@ -61,8 +62,8 @@ export default function BackfillBar({ onDone }) {
   const manual = status?.manual;
   const manualLater = manual?.last_finished_at && (!daily?.last_finished_at || manual.last_finished_at > daily.last_finished_at);
   const lastUpdate = manualLater ? manual.last_finished_at : daily?.last_finished_at;
-  const lastNote = manualLater ? ` (manual, ${manual.last_reason || ''})`.replace(', )', ')')
-    : daily?.last_reason === 'catch-up' ? ' (catch-up)' : '';
+  const lastNote = manualLater ? ` (${[t('manual'), manual.last_reason].filter(Boolean).join(', ')})`
+    : daily?.last_reason === 'catch-up' ? ` (${t('catch-up')})` : '';
   const stale = status?.stale || [];
   const dim = { fontSize: 12, color: 'var(--text-dim)' };
 
@@ -70,31 +71,31 @@ export default function BackfillBar({ onDone }) {
     <div className="panel">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div style={{ fontSize: 12, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Prices · automatic
+          {t('Prices · automatic')}
         </div>
         {status ? (
           <>
             <span style={{ fontSize: 12, fontWeight: 600, color: stale.length ? 'var(--amber)' : 'var(--green)' }}>
-              {stale.length ? `${stale.length} of ${status.instruments} behind` : `All ${status.instruments} up to date`}
+              {stale.length ? t('{n} of {total} behind', { n: stale.length, total: status.instruments }) : t('All {total} up to date', { total: status.instruments })}
             </span>
             <span style={dim}>
-              Last update {fmtWhen(lastUpdate)}{lastNote}
-              {' · '}next {fmtWhen(daily?.next_run)}
-              {status.crypto?.last_finished_at && <> · crypto hourly, last {fmtWhen(status.crypto.last_finished_at)}</>}
+              {t('Last update')} {fmtWhen(lastUpdate)}{lastNote}
+              {' · '}{t('next')} {fmtWhen(daily?.next_run)}
+              {status.crypto?.last_finished_at && <> · {t('crypto hourly, last')} {fmtWhen(status.crypto.last_finished_at)}</>}
             </span>
             {stale.length > 0 && (
-              <span style={{ ...dim, flexBasis: '100%' }} title="Latest stored price is older than expected; the next automatic run retries these">
-                Behind: {stale.slice(0, 8).map(s => `${s.symbol} (${s.latest || 'no prices'})`).join(', ')}{stale.length > 8 ? ` +${stale.length - 8} more` : ''}
+              <span style={{ ...dim, flexBasis: '100%' }} title={t('Latest stored price is older than expected; the next automatic run retries these')}>
+                {t('Behind:')} {stale.slice(0, 8).map(s => `${s.symbol} (${s.latest || t('no prices')})`).join(', ')}{stale.length > 8 ? ` ${t('+{n} more', { n: stale.length - 8 })}` : ''}
               </span>
             )}
           </>
         ) : (
-          <span style={dim}>Checking…</span>
+          <span style={dim}>{t('Checking…')}</span>
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 12, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Backfill prices
+          {t('Backfill prices')}
         </div>
         <input
           type="number"
@@ -114,19 +115,19 @@ export default function BackfillBar({ onDone }) {
             fontVariantNumeric: 'tabular-nums',
           }}
         />
-        <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>days back</span>
+        <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{t('days back')}</span>
         <button className="btn" onClick={run} disabled={running || !days || days < 1}>
-          {running ? 'Backfilling…' : 'Run'}
+          {running ? t('Backfilling…') : t('Run')}
         </button>
         {result && (
           <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
-            Done · {result.ok} ok{result.fail ? `, ${result.fail} failed` : ''} · {result.days}d
+            {t('Done · {ok} ok', { ok: result.ok })}{result.fail ? `, ${t('{n} failed', { n: result.fail })}` : ''} · {t('{n}d', { n: result.days })}
           </span>
         )}
-        {err && <span style={{ fontSize: 12, color: 'var(--red)' }}>Error: {err}</span>}
+        {err && <span style={{ fontSize: 12, color: 'var(--red)' }}>{t('Error: {err}', { err })}</span>}
         {running && (
           <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
-            Yahoo calls are throttled — this can take several minutes.
+            {t('Yahoo calls are throttled — this can take several minutes.')}
           </span>
         )}
       </div>

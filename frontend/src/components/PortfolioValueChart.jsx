@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LabelList, ReferenceArea } from 'recharts';
 import { api } from '../api.js';
+import { t, locale, isKo } from '../i18n.jsx';
 
 function fmtMoney(n, ccy, d = 0) {
   if (n == null || isNaN(n)) return '–';
@@ -33,13 +34,13 @@ function fmtFx(n) {
 function fmtMonth(ym) {
   const [y, m] = (ym || '').split('-');
   if (!y || !m) return ym;
-  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString(locale(), { month: 'short', year: '2-digit' });
 }
 // 'YYYY-MM-DD' -> "Jun 29". Built as local time so the day doesn't slip.
 function fmtDay(ymd) {
   const [y, m, d] = (ymd || '').split('-');
   if (!y || !m || !d) return ymd;
-  return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString(locale(), { month: 'short', day: 'numeric' });
 }
 // Sortable label of a point regardless of granularity (daily 'date' or monthly 'month').
 const pointTs = p => p.date || `${p.month}-01`;
@@ -53,7 +54,7 @@ function minusMonths(ymd, n) {
 // Cash series carry the reserved symbol CASH:<CCY>. Labelled "Cash held in KRW" rather
 // than "Cash (KRW)" — the currency names where the money sits, NOT the unit of the plotted
 // value, which is always the chart's display currency.
-const prettySym = s => (typeof s === 'string' && s.startsWith('CASH:') ? `Cash held in ${s.slice(5)}` : s);
+const prettySym = s => (typeof s === 'string' && s.startsWith('CASH:') ? t('Cash held in {ccy}', { ccy: s.slice(5) }) : s);
 
 const GREEN = '#34d399';
 const RED = '#f87171';
@@ -121,8 +122,8 @@ function CurrencyToggle({ value, onChange }) {
     <div
       role="switch"
       aria-checked={isKrw}
-      aria-label="Display currency"
-      title="Slide to switch chart currency (USD ⟷ KRW)"
+      aria-label={t('Display currency')}
+      title={t('Slide to switch chart currency (USD ⟷ KRW)')}
       onClick={() => onChange(isKrw ? 'USD' : 'KRW')}
       style={{
         position: 'relative', display: 'inline-flex', alignItems: 'center',
@@ -199,7 +200,7 @@ function ChartTooltip({ active, payload, ccy, symbols, hoverKey, daily }) {
   const row = payload[0].payload;
   const label = daily ? fmtDay(row.date) : fmtMonth(row.month);
   const isBackfill = !!row.backfill;
-  const deltaSuffix = daily ? 'DoD' : 'MoM';
+  const deltaSuffix = daily ? t('DoD') : t('MoM');
   const meta = new Map(symbols.map(s => [s.key, s.symbol]));
   const order = new Map(symbols.map((s, i) => [s.key, i])); // server stack order
   const segs = payload
@@ -237,11 +238,11 @@ function ChartTooltip({ active, payload, ccy, symbols, hoverKey, daily }) {
         {/* Say it plainly on every hypothetical period — these were never traded. */}
         {isBackfill && (
           <span style={{ color: '#0d1117', background: DIM, borderRadius: 3, padding: '0 4px', fontSize: 10, fontWeight: 700 }}>
-            BACKFILLED
+            {t('BACKFILLED')}
           </span>
         )}
       </div>
-      <div style={{ color: '#e6e6e6', fontWeight: 600, marginBottom: 2 }}>Total {fmtMoney(row.total, ccy)}</div>
+      <div style={{ color: '#e6e6e6', fontWeight: 600, marginBottom: 2 }}>{t('Total')} {fmtMoney(row.total, ccy)}</div>
       {row.mom != null && (
         <div style={{ color: momColor, marginBottom: 6 }}>
           {row.mom > 0 ? '▲' : row.mom < 0 ? '▼' : ''} {fmtMoney(Math.abs(row.mom), ccy)}
@@ -267,7 +268,7 @@ function ChartTooltip({ active, payload, ccy, symbols, hoverKey, daily }) {
       {cashRows.length > 0 && (
         <div style={{ display: 'flex', gap: 6, lineHeight: 1.45, paddingBottom: 4, marginBottom: 4, borderBottom: '1px solid #2d3441' }}>
           <span style={{ width: 9, flexShrink: 0 }} />
-          <span style={{ color: DIM, flex: 1 }}>Cash subtotal</span>
+          <span style={{ color: DIM, flex: 1 }}>{t('Cash subtotal')}</span>
           <span style={{ color: DIM }}>{fmtMoney(cashTotal, ccy)}</span>
         </div>
       )}
@@ -505,7 +506,7 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
     <div className="panel">
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <h2 style={{ margin: '0 0 4px' }}>
-          {daily ? 'Daily Close Trend' : 'Monthly Average Asset Value'}
+          {daily ? t('Daily Close Trend') : t('Monthly Average Asset Value')}
         </h2>
         {/* marginLeft:auto + flex-end keeps the controls on the right edge even when the
             row wraps under the heading, or when the controls wrap among themselves. */}
@@ -519,7 +520,7 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
               className={`btn ${rangeMonths === p.months ? '' : 'ghost'}`}
               onClick={() => { setRangeMonths(p.months); setDraft(p.months == null ? '' : String(p.months)); }}
             >
-              {p.label}
+              {t(p.label)}
             </button>
           ))}
           <input
@@ -529,25 +530,25 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
             placeholder="#"
             style={inputStyle}
           />
-          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>months</span>
-          <button className="btn" onClick={applyDraft}>Apply</button>
+          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{t('months')}</span>
+          <button className="btn" onClick={applyDraft}>{t('Apply')}</button>
           {/* Toggle daily ↔ monthly. Label names the view you'll switch TO. */}
           <button
             className="btn"
             style={{ marginLeft: 4 }}
             onClick={() => setGranularity(g => (g === 'daily' ? 'monthly' : 'daily'))}
-            title={daily ? 'Switch to the monthly-average view' : 'Switch to the daily-close view'}
+            title={daily ? t('Switch to the monthly-average view') : t('Switch to the daily-close view')}
           >
-            {daily ? 'Monthly' : 'Daily'}
+            {daily ? t('Monthly') : t('Daily')}
           </button>
           {/* Multi-select over the holdings shown in the stack. */}
           <div style={{ position: 'relative' }}>
             <button
               className={`btn ${isFiltered ? '' : 'ghost'}`}
               onClick={() => setFilterOpen(o => !o)}
-              title="Choose which holdings the chart shows"
+              title={t('Choose which holdings the chart shows')}
             >
-              {isFiltered ? `${shown.length}/${symbols.length} holdings` : 'All holdings'} ▾
+              {isFiltered ? t('{n}/{total} holdings', { n: shown.length, total: symbols.length }) : t('All holdings')} ▾
             </button>
             {filterOpen && (
               <>
@@ -568,13 +569,13 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
                       className={`btn ${allOn ? '' : 'ghost'}`} style={{ flex: 1 }}
                       onClick={() => setPicked(null)}
                     >
-                      All
+                      {t('All')}
                     </button>
                     <button
                       className={`btn ${noneOn ? '' : 'ghost'}`} style={{ flex: 1 }}
                       onClick={() => setPicked(new Set())}
                     >
-                      None
+                      {t('None')}
                     </button>
                   </div>
                   {symbols.map((sy) => {
@@ -609,17 +610,17 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
             style={{ marginLeft: 4 }}
             onClick={() => setShowCash(v => !v)}
             title={showCash
-              ? 'Show invested securities only'
-              : 'Include cash balances, converted into the display currency at each period\u2019s rate'}
+              ? t('Show invested securities only')
+              : t('Include cash balances, converted into the display currency at each period\u2019s rate')}
           >
-            + Cash
+            {t('+ Cash')}
           </button>
           {/* FX rate: on-bar figure + overlay line on the right axis. */}
           <button
             className={`btn ${showFx ? '' : 'ghost'}`}
             style={{ marginLeft: 4 }}
             onClick={() => setShowFx(v => !v)}
-            title={showFx ? 'Hide the USD/KRW rate' : 'Show the USD/KRW rate each period was valued at'}
+            title={showFx ? t('Hide the USD/KRW rate') : t('Show the USD/KRW rate each period was valued at')}
           >
             ₩/$ FX
           </button>
@@ -627,51 +628,85 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
       </div>
       {daily ? (
         <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6 }}>
-          Each point is your portfolio's total value at that <strong style={{ color: 'var(--text)' }}>trading day's close</strong>
-          {' '}(in {ccy}), broken down by stock — the holdings you actually held that day valued at its closing prices.
-          The figure on top is that day’s total, with its day-over-day change beneath.
-          {showFx && hasFx && ' At the foot of each bar (and on the dashed right-axis line) is the USD/KRW rate that valued it.'}
-          {showCash && ` Cash is included and every band is plotted in ${ccy} — a balance held in another currency is converted at that day's rate (hover to see both figures).`}
-          {' '}Hover any point for the
-          per-stock breakdown. Switch back to <strong style={{ color: 'var(--text)' }}>Monthly</strong> for each month's average.
+          {isKo() ? (
+            <>
+              각 지점은 해당 <strong style={{ color: 'var(--text)' }}>거래일 종가</strong> 기준 포트폴리오 총 가치({ccy})이며, 그날 실제 보유한 종목을 종가로 평가해 종목별로 나눠 보여줍니다.
+              막대 위 숫자는 그날의 총액이고, 아래는 전일 대비 변화입니다.
+              {showFx && hasFx && ' 각 막대 아래(그리고 오른쪽 축의 점선)에는 평가에 쓰인 원/달러 환율이 표시됩니다.'}
+              {showCash && ` 현금이 포함되며 모든 구간은 ${ccy}로 표시됩니다 — 다른 통화로 보유한 잔액은 그날 환율로 환산합니다(마우스를 올리면 두 금액 모두 보입니다).`}
+              {' '}지점에 마우스를 올리면 종목별 내역이 보입니다. 월별 평균은 <strong style={{ color: 'var(--text)' }}>월별</strong>로 전환하세요.
+            </>
+          ) : (
+            <>
+              Each point is your portfolio's total value at that <strong style={{ color: 'var(--text)' }}>trading day's close</strong>
+              {' '}(in {ccy}), broken down by stock — the holdings you actually held that day valued at its closing prices.
+              The figure on top is that day’s total, with its day-over-day change beneath.
+              {showFx && hasFx && ' At the foot of each bar (and on the dashed right-axis line) is the USD/KRW rate that valued it.'}
+              {showCash && ` Cash is included and every band is plotted in ${ccy} — a balance held in another currency is converted at that day's rate (hover to see both figures).`}
+              {' '}Hover any point for the
+              per-stock breakdown. Switch back to <strong style={{ color: 'var(--text)' }}>Monthly</strong> for each month's average.
+            </>
+          )}
         </p>
       ) : (
         <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6 }}>
-          Each point is your portfolio's <strong style={{ color: 'var(--text)' }}>average</strong> total value across that month —
-          the holdings you actually held then, valued at every business day's close (in {ccy}) and averaged, broken down by stock.
-          The figure on top is the month’s average, with its month-over-month change beneath.
-          {showFx && hasFx && ` At the foot of each bar (and on the dashed right-axis line) is the month's average USD/KRW rate —
-            when the bars are read in KRW, part of every move is the currency, not the stocks.`}
-          {showCash && ` Cash sits as one block at the base of each bar, plotted in ${ccy}: unlike the securities above it, a balance is
-            shown as the month's closing figure rather than an average, converted at that day's rate — a deposit made mid-month reads at
-            its full size. Hover to see each balance in its own currency alongside the converted figure.`}
-          {' '}Switch to{' '}
-          <strong style={{ color: 'var(--text)' }}>Daily</strong> to see each day's closing total.
+          {isKo() ? (
+            <>
+              각 지점은 해당 월 포트폴리오 총 가치의 <strong style={{ color: 'var(--text)' }}>평균</strong>입니다 — 그달 실제 보유한 종목을 매 영업일 종가({ccy})로 평가해 평균했으며, 종목별로 나눠 보여줍니다.
+              막대 위 숫자는 그달 평균이고, 아래는 전월 대비 변화입니다.
+              {showFx && hasFx && ' 각 막대 아래(그리고 오른쪽 축의 점선)에는 그달 평균 원/달러 환율이 표시됩니다 — 원화로 볼 때는 변화의 일부가 주가가 아니라 환율 때문입니다.'}
+              {showCash && ` 현금은 각 막대 맨 아래에 한 덩어리로 ${ccy} 기준으로 표시됩니다. 위의 증권과 달리 잔액은 평균이 아닌 월말 금액을 그날 환율로 환산해 보여주므로, 월중에 입금한 금액도 전액으로 표시됩니다. 마우스를 올리면 각 잔액의 원래 통화 금액과 환산 금액이 함께 보입니다.`}
+              {' '}매일의 종가 기준 총액을 보려면 <strong style={{ color: 'var(--text)' }}>일별</strong>로 전환하세요.
+            </>
+          ) : (
+            <>
+              Each point is your portfolio's <strong style={{ color: 'var(--text)' }}>average</strong> total value across that month —
+              the holdings you actually held then, valued at every business day's close (in {ccy}) and averaged, broken down by stock.
+              The figure on top is the month’s average, with its month-over-month change beneath.
+              {showFx && hasFx && ` At the foot of each bar (and on the dashed right-axis line) is the month's average USD/KRW rate —
+                when the bars are read in KRW, part of every move is the currency, not the stocks.`}
+              {showCash && ` Cash sits as one block at the base of each bar, plotted in ${ccy}: unlike the securities above it, a balance is
+                shown as the month's closing figure rather than an average, converted at that day's rate — a deposit made mid-month reads at
+                its full size. Hover to see each balance in its own currency alongside the converted figure.`}
+              {' '}Switch to{' '}
+              <strong style={{ color: 'var(--text)' }}>Daily</strong> to see each day's closing total.
+            </>
+          )}
         </p>
       )}
       {isFiltered && (
         <p style={{ margin: '-6px 0 12px', fontSize: 12, color: 'var(--amber, #f5a623)', lineHeight: 1.6 }}>
-          Showing {shown.length} of {symbols.length} holdings — the bars are a partial total, so the on-bar figure is hidden.
-          {showVolume && ' The number inside each band is the shares held that month.'}
+          {t('Showing {n} of {total} holdings — the bars are a partial total, so the on-bar figure is hidden.', { n: shown.length, total: symbols.length })}
+          {showVolume && ` ${t('The number inside each band is the shares held that month.')}`}
         </p>
       )}
       {/* Only when the server actually reconstructed something — a portfolio whose own
           history already reaches back that far has nothing hypothetical to disclaim. */}
       {backfilled && !loading && !err && (
         <p style={{ margin: '-6px 0 12px', fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6 }}>
-          The shaded periods from <strong style={{ color: 'var(--text)' }}>{fmtMonth(backfilled.slice(0, 7))}</strong> up to
-          your first recorded trade are <strong style={{ color: 'var(--text)' }}>hypothetical</strong>: the position you opened
-          with, held at those same share counts and valued at each day's real close and exchange rate. They come from no
-          transaction of yours — your ledger, cost basis, gains and cash are untouched by this. A holding that hadn't listed
-          yet is simply absent from the months before it existed.
+          {isKo() ? (
+            <>
+              <strong style={{ color: 'var(--text)' }}>{fmtMonth(backfilled.slice(0, 7))}</strong>부터 첫 거래 기록 전까지의 음영 구간은 <strong style={{ color: 'var(--text)' }}>가상</strong>입니다:
+              처음 보유한 포지션을 같은 수량으로 유지했다고 보고 매일의 실제 종가와 환율로 평가한 값입니다. 실제 거래가 아니므로
+              거래 내역, 매입 원가, 손익, 현금에는 영향을 주지 않습니다. 아직 상장되지 않았던 종목은 그 이전 달에는 표시되지 않습니다.
+            </>
+          ) : (
+            <>
+              The shaded periods from <strong style={{ color: 'var(--text)' }}>{fmtMonth(backfilled.slice(0, 7))}</strong> up to
+              your first recorded trade are <strong style={{ color: 'var(--text)' }}>hypothetical</strong>: the position you opened
+              with, held at those same share counts and valued at each day's real close and exchange rate. They come from no
+              transaction of yours — your ledger, cost basis, gains and cash are untouched by this. A holding that hadn't listed
+              yet is simply absent from the months before it existed.
+            </>
+          )}
         </p>
       )}
       {loading ? (
-        <div className="loading">Loading {daily ? 'daily' : 'monthly'} value…</div>
+        <div className="loading">{daily ? t('Loading daily value…') : t('Loading monthly value…')}</div>
       ) : err ? (
-        <div className="error">Failed to load: {err}</div>
+        <div className="error">{t('Failed to load: {err}', { err })}</div>
       ) : data.length === 0 ? (
-        <div className="loading">Not enough price history yet to chart {daily ? 'daily' : 'monthly'} value.</div>
+        <div className="loading">{daily ? t('Not enough price history yet to chart daily value.') : t('Not enough price history yet to chart monthly value.')}</div>
       ) : (
         <>
           <div style={{ width: '100%', height: 340 }}>
@@ -683,7 +718,7 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
                   <ReferenceArea
                     x1={backfillBand.x1} x2={backfillBand.x2}
                     fill="#9aa0a6" fillOpacity={0.09} stroke="none"
-                    label={{ value: 'backfilled', position: 'insideTopLeft', fill: DIM, fontSize: 10 }}
+                    label={{ value: t('backfilled'), position: 'insideTopLeft', fill: DIM, fontSize: 10 }}
                   />
                 )}
                 <XAxis dataKey={daily ? 'date' : 'month'} tickFormatter={daily ? fmtDay : fmtMonth} stroke="#9aa0a6" fontSize={11} minTickGap={20} />
@@ -757,7 +792,7 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
           >
             {showFx && hasFx && (
               <div
-                title="USD/KRW rate used to value each period (right axis)"
+                title={t('USD/KRW rate used to value each period (right axis)')}
                 style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'default' }}
               >
                 <span style={{ width: 10, height: 0, borderTop: `2px dashed ${FX_COLOR}`, flexShrink: 0 }} />
@@ -775,7 +810,7 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
                   onMouseEnter={() => setHoverKey(s.key)}
                   onMouseLeave={() => setHoverKey(null)}
                   onClick={() => toggleKey(s.key)}
-                  title={off ? `Click to show ${s.symbol}` : `Click to hide ${s.symbol}`}
+                  title={off ? t('Click to show {name}', { name: s.symbol }) : t('Click to hide {name}', { name: s.symbol })}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer',
                     userSelect: 'none',

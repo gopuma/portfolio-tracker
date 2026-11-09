@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { api } from '../api.js';
+import { t, locale, isKo } from '../i18n.jsx';
 
 function fmtNum(n, digits = 2) {
   if (n == null || isNaN(n)) return '–';
@@ -17,8 +18,8 @@ function AsOf({ date }) {
   if (!date) return null;
   const dt = new Date(`${String(date).slice(0, 10)}T00:00:00`);
   if (isNaN(dt.getTime())) return null;
-  const s = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  return <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>Data as of {s}</span>;
+  const s = dt.toLocaleDateString(locale(), { month: 'short', day: 'numeric', year: 'numeric' });
+  return <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{t('Data as of {date}', { date: s })}</span>;
 }
 
 const PRESETS = [
@@ -94,13 +95,13 @@ export default function VixCard({ reloadKey = 0 }) {
     <div className="panel">
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <h2 style={{ margin: 0 }}>VIX — Volatility Index</h2>
+          <h2 style={{ margin: 0 }}>{t('VIX — Volatility Index')}</h2>
           <AsOf date={chartData.at(-1)?.date} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {PRESETS.map(p => (
             <button key={p.label} className={`btn ${days === p.days ? '' : 'ghost'}`} onClick={() => { setDays(p.days); setDraft(String(p.days)); }}>
-              {p.label}
+              {t(p.label)}
             </button>
           ))}
           <input
@@ -109,8 +110,8 @@ export default function VixCard({ reloadKey = 0 }) {
             onKeyDown={e => { if (e.key === 'Enter') applyDraft(); }}
             style={inputStyle}
           />
-          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>days</span>
-          <button className="btn" onClick={applyDraft}>Apply</button>
+          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{t('days')}</span>
+          <button className="btn" onClick={applyDraft}>{t('Apply')}</button>
         </div>
       </div>
 
@@ -119,27 +120,27 @@ export default function VixCard({ reloadKey = 0 }) {
         {quote && (
           liveOpen ? (
             <span style={{ fontSize: 11, color: 'var(--green)', display: 'flex', alignItems: 'center', gap: 5, alignSelf: 'center' }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} /> LIVE
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} /> {t('LIVE')}
             </span>
           ) : (
-            <span style={{ fontSize: 11, color: 'var(--text-dim)', alignSelf: 'center' }}>At close</span>
+            <span style={{ fontSize: 11, color: 'var(--text-dim)', alignSelf: 'center' }}>{t('At close')}</span>
           )
         )}
-        <span className="pill" style={{ background: 'transparent', border: `1px solid ${reg.color}`, color: reg.color }}>{reg.label}</span>
+        <span className="pill" style={{ background: 'transparent', border: `1px solid ${reg.color}`, color: reg.color }}>{t(reg.label)}</span>
         {change != null && (
           <div className={changeColor} style={{ fontSize: 14 }}>
             {change > 0 ? '▲' : change < 0 ? '▼' : ''} {fmtNum(Math.abs(change))} ({fmtPct(changePct)})
-            <span style={{ color: 'var(--text-dim)', marginLeft: 6 }}>over period</span>
+            <span style={{ color: 'var(--text-dim)', marginLeft: 6 }}>{t('over period')}</span>
           </div>
         )}
       </div>
 
       {loading && !data ? (
-        <div className="loading">Loading VIX…</div>
+        <div className="loading">{t('Loading VIX…')}</div>
       ) : err ? (
-        <div className="error">Failed to load: {err}</div>
+        <div className="error">{t('Failed to load: {err}', { err })}</div>
       ) : chartData.length === 0 ? (
-        <div className="loading">No VIX history yet — backfill <code>^VIX</code>.</div>
+        <div className="loading">{t('No VIX history yet — backfill')} <code>^VIX</code>.</div>
       ) : (
         <div style={{ width: '100%', height: 300, marginTop: 12 }}>
           <ResponsiveContainer>
@@ -158,11 +159,22 @@ export default function VixCard({ reloadKey = 0 }) {
       )}
 
       <p style={{ marginTop: 12, marginBottom: 0, fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6 }}>
-        The <strong style={{ color: 'var(--text)' }}>VIX</strong> is the market's expected 30-day volatility of the S&amp;P 500,
-        implied from option prices — the "fear gauge." Rough bands: <span className="up">&lt; 20 calm</span>,
-        <span style={{ color: 'var(--amber)' }}> 20–30 elevated</span>, <span className="down"> &gt; 30 fear</span>.
-        It usually rises when stocks fall, so it tends to be <em>negatively correlated</em> with equities — a quick read on
-        market stress.
+        {isKo() ? (
+          <>
+            <strong style={{ color: 'var(--text)' }}>VIX</strong>는 옵션 가격에서 산출한 S&amp;P 500의 향후 30일 예상 변동성으로,
+            흔히 "공포 지수"라고 부릅니다. 대략적인 구간: <span className="up">20 미만 안정</span>,
+            <span style={{ color: 'var(--amber)' }}> 20–30 경계</span>, <span className="down"> 30 초과 공포</span>.
+            주가가 떨어질 때 보통 오르므로 주식과 <em>음의 상관관계</em>를 보이는 경향이 있어, 시장 스트레스를 빠르게 가늠할 수 있습니다.
+          </>
+        ) : (
+          <>
+            The <strong style={{ color: 'var(--text)' }}>VIX</strong> is the market's expected 30-day volatility of the S&amp;P 500,
+            implied from option prices — the "fear gauge." Rough bands: <span className="up">&lt; 20 calm</span>,
+            <span style={{ color: 'var(--amber)' }}> 20–30 elevated</span>, <span className="down"> &gt; 30 fear</span>.
+            It usually rises when stocks fall, so it tends to be <em>negatively correlated</em> with equities — a quick read on
+            market stress.
+          </>
+        )}
       </p>
     </div>
   );

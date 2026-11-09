@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { api } from '../api.js';
+import { t, locale } from '../i18n.jsx';
 
 function fmtNum(n, digits = 2) {
   if (n == null || isNaN(n)) return '–';
@@ -32,8 +33,8 @@ function AsOf({ date }) {
   if (!date) return null;
   const dt = new Date(`${String(date).slice(0, 10)}T00:00:00`);
   if (isNaN(dt.getTime())) return null;
-  const s = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  return <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>Data as of {s}</span>;
+  const s = dt.toLocaleDateString(locale(), { month: 'short', day: 'numeric', year: 'numeric' });
+  return <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{t('Data as of {date}', { date: s })}</span>;
 }
 
 // Period presets. 'Max' asks for more history than any pair actually has, so the
@@ -84,7 +85,7 @@ export default function FxRateCard({
       .then(d => {
         const q = d.quotes?.[symbol];
         if (q && q.price != null) setLive(q);
-        else throw new Error('No live quote');
+        else throw new Error(t('No live quote'));
       })
       .catch(e => setLiveErr(e.message))
       .finally(() => setLiveLoading(false));
@@ -147,7 +148,7 @@ export default function FxRateCard({
   const changeColor = change == null ? '' : change > 0 ? 'up' : change < 0 ? 'down' : '';
 
   // Human label for the selected window: a preset name (6M/1Y/…) or "<n> days".
-  const periodLabel = PRESETS.find(p => p.days === days)?.label || `${days} day${days === 1 ? '' : 's'}`;
+  const periodLabel = PRESETS.find(p => p.days === days)?.label || t(days === 1 ? '{n} day' : '{n} days', { n: days });
   // Small rates (e.g. KRW/JPY ≈ 9.5) need decimals on the Y axis; large ones (KRW/USD ≈ 1500) don't.
   const yDigits = last != null && Math.abs(last) < 100 ? 2 : 0;
 
@@ -158,13 +159,13 @@ export default function FxRateCard({
   const applyDraft = () => {
     const n = Math.round(Number(draft));
     if (!Number.isFinite(n) || n < 1) {
-      setDraftNote('Enter a whole number of days (1 or more).');
+      setDraftNote(t('Enter a whole number of days (1 or more).'));
       return;
     }
     const clamped = Math.min(n, MAX_DAYS);
     setDraftNote(
       clamped !== n
-        ? `Capped at ${clamped.toLocaleString()} days — the full history we hold.`
+        ? t('Capped at {n} days — the full history we hold.', { n: clamped.toLocaleString() })
         : null
     );
     setDays(clamped);
@@ -174,18 +175,18 @@ export default function FxRateCard({
   return (
     <div className="panel">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <h2 style={{ margin: 0 }}>{title}</h2>
+        <h2 style={{ margin: 0 }}>{t(title)}</h2>
         <AsOf date={chartData.at(-1)?.date} />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12, flexWrap: 'wrap' }}>
         <div className="metric">
-          {fmtNum(last)} <span className="unit">{unit}</span>
+          {fmtNum(last)} <span className="unit">{t(unit)}</span>
         </div>
         {change != null && (
           <div className={changeColor} style={{ fontSize: 14 }}>
             {change > 0 ? '▲' : change < 0 ? '▼' : ''} {fmtNum(Math.abs(change))} ({fmtPct(changePct)})
-            <span style={{ color: 'var(--text-dim)', marginLeft: 6 }}>over {periodLabel}</span>
+            <span style={{ color: 'var(--text-dim)', marginLeft: 6 }}>{t('over {period}', { period: t(periodLabel) })}</span>
           </div>
         )}
         {/* Live-rate control grouped with its result, set apart from the period controls above. */}
@@ -193,21 +194,21 @@ export default function FxRateCard({
           {live && (
             <div style={{ fontSize: 13, color: '#f5a623', display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ display: 'inline-block', width: 18, borderTop: '2px dashed #f5a623' }} />
-              {live.market_state === 'REGULAR' ? 'Live' : 'Latest close'} {fmtNum(live.price)} {pairShort}
-              {live.time && <span style={{ color: 'var(--text-dim)' }}>· {new Date(live.time).toLocaleString()} {tzAbbrev(new Date(live.time))}</span>}
+              {live.market_state === 'REGULAR' ? t('Live') : t('Latest close')} {fmtNum(live.price)} {pairShort}
+              {live.time && <span style={{ color: 'var(--text-dim)' }}>· {new Date(live.time).toLocaleString(locale())} {tzAbbrev(new Date(live.time))}</span>}
             </div>
           )}
-          {liveErr && <span style={{ fontSize: 12, color: 'var(--red)' }}>Live rate failed: {liveErr}</span>}
-          <button className="btn" onClick={getLive} disabled={liveLoading} title={`Fetch the current real-time ${pairShort} rate and overlay it on the chart as a dashed line`}>
-            {liveLoading ? 'Fetching…' : '↻ Get live rate'}
+          {liveErr && <span style={{ fontSize: 12, color: 'var(--red)' }}>{t('Live rate failed: {err}', { err: liveErr })}</span>}
+          <button className="btn" onClick={getLive} disabled={liveLoading} title={t('Fetch the current real-time {pair} rate and overlay it on the chart as a dashed line', { pair: pairShort })}>
+            {liveLoading ? t('Fetching…') : t('↻ Get live rate')}
           </button>
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginTop: 14 }}>
-        <AvgStat label="1-Year Avg" value={averages.y1} current={last} unit={pairShort} />
-        <AvgStat label="3-Year Avg" value={averages.y3} current={last} unit={pairShort} />
-        <AvgStat label="5-Year Avg" value={averages.y5} current={last} unit={pairShort} />
+        <AvgStat label={t('1-Year Avg')} value={averages.y1} current={last} unit={pairShort} />
+        <AvgStat label={t('3-Year Avg')} value={averages.y3} current={last} unit={pairShort} />
+        <AvgStat label={t('5-Year Avg')} value={averages.y5} current={last} unit={pairShort} />
       </div>
 
       {/* Chart period controls — placed just above the chart they drive. */}
@@ -218,7 +219,7 @@ export default function FxRateCard({
             className={`btn ${days === p.days ? '' : 'ghost'}`}
             onClick={() => { setDays(p.days); setDraft(String(p.days)); setDraftNote(null); }}
           >
-            {p.label}
+            {t(p.label)}
           </button>
         ))}
         <input
@@ -239,8 +240,8 @@ export default function FxRateCard({
             fontVariantNumeric: 'tabular-nums',
           }}
         />
-        <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>days</span>
-        <button className="btn" onClick={applyDraft}>Apply</button>
+        <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{t('days')}</span>
+        <button className="btn" onClick={applyDraft}>{t('Apply')}</button>
       </div>
 
       {draftNote && (
@@ -250,11 +251,11 @@ export default function FxRateCard({
       )}
 
       {loading && !data ? (
-        <div className="loading">Loading exchange rate…</div>
+        <div className="loading">{t('Loading exchange rate…')}</div>
       ) : err ? (
-        <div className="error">Failed to load: {err}</div>
+        <div className="error">{t('Failed to load: {err}', { err })}</div>
       ) : chartData.length === 0 ? (
-        <div className="loading">No FX history yet — backfill <code>{symbol}</code>.</div>
+        <div className="loading">{t('No FX history yet — backfill')} <code>{symbol}</code>.</div>
       ) : (
         <div style={{ width: '100%', height: 300, marginTop: 12 }}>
           <ResponsiveContainer>
@@ -264,7 +265,7 @@ export default function FxRateCard({
               <YAxis stroke="#9aa0a6" fontSize={11} domain={['auto', 'auto']} tickFormatter={v => fmtNum(v, yDigits)} width={48} />
               <Tooltip
                 contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }}
-                formatter={v => [`${fmtNum(v)} ${pairShort}`, 'Rate']}
+                formatter={v => [`${fmtNum(v)} ${pairShort}`, t('Rate')]}
               />
               <Line type="monotone" dataKey="rate" stroke="#4a9eff" dot={false} strokeWidth={2} />
               {live?.price != null && (
@@ -275,7 +276,7 @@ export default function FxRateCard({
                   strokeDasharray="6 4"
                   strokeWidth={2}
                   ifOverflow="extendDomain"
-                  label={{ value: `Live ${fmtNum(live.price)}`, position: 'insideTopRight', fill: '#f5a623', fontSize: 11 }}
+                  label={{ value: `${t('Live')} ${fmtNum(live.price)}`, position: 'insideTopRight', fill: '#f5a623', fontSize: 11 }}
                 />
               )}
             </LineChart>
@@ -298,7 +299,7 @@ function AvgStat({ label, value, current, unit = 'KRW/USD' }) {
       </div>
       {diffPct != null && (
         <div className={color} style={{ fontSize: 12 }}>
-          now {diffPct > 0 ? '+' : ''}{fmtPct(diffPct)} vs avg
+          {t('now {pct} vs avg', { pct: `${diffPct > 0 ? '+' : ''}${fmtPct(diffPct)}` })}
         </div>
       )}
     </div>

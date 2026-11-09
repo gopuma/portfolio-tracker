@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { api } from '../api.js';
+import { t, isKo } from '../i18n.jsx';
 
 function fmtPct(n, d = 1) {
   if (n == null || isNaN(n)) return '–';
@@ -25,9 +26,9 @@ function SortTh({ label, col, num, sortKey, sortDir, onSort, title }) {
       className={num ? 'num' : undefined}
       onClick={() => onSort(col)}
       style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
-      title={title || 'Click to sort'}
+      title={title ? t(title) : t('Click to sort')}
     >
-      {label}<span style={{ opacity: active ? 1 : 0.25, marginLeft: 4 }}>{active ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>
+      {t(label)}<span style={{ opacity: active ? 1 : 0.25, marginLeft: 4 }}>{active ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>
     </th>
   );
 }
@@ -101,28 +102,40 @@ export default function PredictionsPage() {
       <div className="panel">
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 420px', minWidth: 0 }}>
-            <h2 style={{ margin: 0 }}>Prediction Competition</h2>
+            <h2 style={{ margin: 0 }}>{t('Prediction Competition')}</h2>
             <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 4 }}>
-              {symbol
-                ? <>Each model's accuracy on <strong style={{ color: 'var(--text)' }}>{symbol}</strong> at the selected horizon, </>
-                : <>Each method forecasts every watchlist stock at the selected horizon; metrics aggregated across all stocks, </>}
-              over a rolling {board?.window_days ?? 180}-trading-day, walk-forward backtest (no look-ahead).
-              Ranked by directional accuracy; tie-break: RMSE skill vs the naive baseline.
+              {isKo() ? (
+                <>
+                  {symbol
+                    ? <>선택한 예측 기간에서 <strong style={{ color: 'var(--text)' }}>{symbol}</strong>에 대한 각 모델의 정확도이며, </>
+                    : <>각 방법이 선택한 예측 기간으로 관심 종목 전체를 예측하고 모든 종목에 걸쳐 지표를 집계하며, </>}
+                  최근 {board?.window_days ?? 180} 거래일 동안의 롤링 워크포워드 백테스트(미래 정보 미사용) 기준입니다.
+                  방향 정확도로 순위를 매기며, 동점이면 단순 기준선 대비 RMSE 스킬로 정합니다.
+                </>
+              ) : (
+                <>
+                  {symbol
+                    ? <>Each model's accuracy on <strong style={{ color: 'var(--text)' }}>{symbol}</strong> at the selected horizon, </>
+                    : <>Each method forecasts every watchlist stock at the selected horizon; metrics aggregated across all stocks, </>}
+                  over a rolling {board?.window_days ?? 180}-trading-day, walk-forward backtest (no look-ahead).
+                  Ranked by directional accuracy; tie-break: RMSE skill vs the naive baseline.
+                </>
+              )}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginLeft: 'auto', flexShrink: 0 }}>
             <select
               value={symbol}
               onChange={e => setSymbol(e.target.value)}
-              title="Scope the leaderboard to one stock, or all stocks"
+              title={t('Scope the leaderboard to one stock, or all stocks')}
               style={{ background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', padding: '6px 8px', fontSize: 13 }}
             >
-              <option value="">All stocks</option>
+              <option value="">{t('All stocks')}</option>
               {symbols.map(s => <option key={s.symbol} value={s.symbol}>{s.name} ({s.symbol})</option>)}
             </select>
             {HORIZONS.map(h => (
               <button key={h.days} className={`btn ${horizon === h.days ? '' : 'ghost'}`} onClick={() => setHorizon(h.days)}>
-                {h.label}
+                {t(h.label)}
               </button>
             ))}
           </div>
@@ -131,11 +144,11 @@ export default function PredictionsPage() {
 
       <div className="panel">
         {loading ? (
-          <div className="loading">Loading leaderboard…</div>
+          <div className="loading">{t('Loading leaderboard…')}</div>
         ) : err ? (
-          <div className="error">Failed to load: {err}</div>
+          <div className="error">{t('Failed to load: {err}', { err })}</div>
         ) : !board || board.count === 0 ? (
-          <div className="loading">No scored predictions yet — run <code>npm run backtest</code> to populate.</div>
+          <div className="loading">{t('No scored predictions yet — run')} <code>npm run backtest</code> {t('to populate.')}</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table>
@@ -177,8 +190,17 @@ export default function PredictionsPage() {
               </tbody>
             </table>
             <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 12, marginBottom: 0, lineHeight: 1.6 }}>
-              Greyed rows don't beat the <strong style={{ color: 'var(--text)' }}>naive random walk</strong> on RMSE skill.
-              Beating random-walk on short-horizon direction is genuinely hard — that's the point of the baseline.
+              {isKo() ? (
+                <>
+                  흐리게 표시된 행은 RMSE 스킬에서 <strong style={{ color: 'var(--text)' }}>단순 랜덤워크</strong>를 이기지 못한 모델입니다.
+                  단기 방향 예측에서 랜덤워크를 이기기는 정말 어렵습니다 — 그래서 기준선이 있습니다.
+                </>
+              ) : (
+                <>
+                  Greyed rows don't beat the <strong style={{ color: 'var(--text)' }}>naive random walk</strong> on RMSE skill.
+                  Beating random-walk on short-horizon direction is genuinely hard — that's the point of the baseline.
+                </>
+              )}
             </p>
           </div>
         )}
@@ -233,7 +255,7 @@ function PerSymbol({ horizon, symbols, pageSymbol }) {
   return (
     <div className="panel">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <h3 style={{ margin: 0 }}>Predicted vs Actual — {horizon}-day</h3>
+        <h3 style={{ margin: 0 }}>{t('Predicted vs Actual — {n}-day', { n: horizon })}</h3>
         <select
           value={sel}
           onChange={e => setSel(e.target.value)}
@@ -246,7 +268,7 @@ function PerSymbol({ horizon, symbols, pageSymbol }) {
       {err ? (
         <div className="error" style={{ marginTop: 12 }}>{err}</div>
       ) : chartData.length === 0 ? (
-        <div className="loading" style={{ marginTop: 12 }}>No scored history yet for {sel}.</div>
+        <div className="loading" style={{ marginTop: 12 }}>{t('No scored history yet for {name}.', { name: sel })}</div>
       ) : (
         <div style={{ width: '100%', height: 340, marginTop: 12 }}>
           <ResponsiveContainer>
@@ -256,7 +278,7 @@ function PerSymbol({ horizon, symbols, pageSymbol }) {
               <YAxis stroke="#9aa0a6" fontSize={11} domain={['auto', 'auto']} tickFormatter={v => fmtNum(v, 0)} width={56} />
               <Tooltip contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }} formatter={v => fmtNum(v)} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="actual" name="Actual" stroke="#ffffff" strokeWidth={2.5} dot={false} connectNulls />
+              <Line type="monotone" dataKey="actual" name={t('Actual')} stroke="#ffffff" strokeWidth={2.5} dot={false} connectNulls />
               {models.map(mv => (
                 <Line key={mv} type="monotone" dataKey={mv} name={mv} stroke={MODEL_COLORS[mv] || '#888'} strokeWidth={1.5} dot={false} connectNulls />
               ))}
@@ -265,7 +287,7 @@ function PerSymbol({ horizon, symbols, pageSymbol }) {
         </div>
       )}
       <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 12, marginBottom: 0 }}>
-        Each colored line is a model's {horizon}-day-ahead forecast plotted at its maturity date; the white line is the realized close.
+        {t("Each colored line is a model's {n}-day-ahead forecast plotted at its maturity date; the white line is the realized close.", { n: horizon })}
       </p>
     </div>
   );

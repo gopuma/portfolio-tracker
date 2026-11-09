@@ -7,6 +7,7 @@ import {
   fmtPct, fmtNum, fmtMoney, fmtCompact, cls, HoldingPctLabel, PortfolioTick, PortfolioChips,
 } from './stressShared.jsx';
 import HistoricalReplay from './HistoricalReplay.jsx';
+import { t, isKo } from '../i18n.jsx';
 
 const WHISKER = '#c9ced6';
 
@@ -21,7 +22,7 @@ function bandOf(current, stressed, sd) {
   const sigma = Math.sqrt(Math.log(1 + (sd / stressed) ** 2));
   return { lo: (stressed * Math.exp(-sigma)) / current - 1, hi: (stressed * Math.exp(sigma)) / current - 1 };
 }
-const fmtRange = (lo, hi) => `${fmtPct(lo, 0)} to ${fmtPct(hi, 0)}`;
+const fmtRange = (lo, hi) => t('{lo} to {hi}', { lo: fmtPct(lo, 0), hi: fmtPct(hi, 0) });
 
 // Historical index moves, peak to trough for a crash and trough to peak for a boom, as a
 // signed % change. `days` is the calendar length of the move, which sets how much room
@@ -102,11 +103,11 @@ function PortfolioTooltip({ active, payload, ccy }) {
   return (
     <div style={{ ...tooltipStyle, padding: '8px 10px', borderRadius: 6 }}>
       <div style={{ fontWeight: 600, marginBottom: 4 }}>{p.name}</div>
-      <div>Now: {fmtMoney(p.current, ccy)}</div>
-      <div>After: {fmtMoney(p.stressed, ccy)}</div>
-      <div className={cls(p.change)}>Change: {fmtMoney(p.change, ccy)} ({fmtPct(p.pct)})</div>
-      <div style={{ color: DIM }}>Likely range: {fmtRange(p.lo, p.hi)}</div>
-      <div style={{ color: DIM }}>Portfolio beta: {fmtNum(p.beta)}</div>
+      <div>{t('Now')}: {fmtMoney(p.current, ccy)}</div>
+      <div>{t('After')}: {fmtMoney(p.stressed, ccy)}</div>
+      <div className={cls(p.change)}>{t('Change')}: {fmtMoney(p.change, ccy)} ({fmtPct(p.pct)})</div>
+      <div style={{ color: DIM }}>{t('Likely range')}: {fmtRange(p.lo, p.hi)}</div>
+      <div style={{ color: DIM }}>{t('Portfolio beta')}: {fmtNum(p.beta)}</div>
     </div>
   );
 }
@@ -118,13 +119,13 @@ function HoldingTooltip({ active, payload, ccy }) {
     <div style={{ ...tooltipStyle, padding: '8px 10px', borderRadius: 6 }}>
       <div style={{ fontWeight: 600 }}>{h.label}</div>
       {h.display_name && h.display_name !== h.label && <div style={{ color: DIM, marginBottom: 4 }}>{h.display_name}</div>}
-      <div>Now: {fmtMoney(h.current, ccy)}</div>
-      <div>After: {fmtMoney(h.stressed, ccy)}</div>
-      <div className={cls(h.pct)}>Change: {fmtMoney(h.stressed - h.current, ccy)} ({fmtPct(h.pct)})</div>
-      {h.moves && <div style={{ color: DIM }}>Likely range: {fmtRange(h.lo, h.hi)}</div>}
+      <div>{t('Now')}: {fmtMoney(h.current, ccy)}</div>
+      <div>{t('After')}: {fmtMoney(h.stressed, ccy)}</div>
+      <div className={cls(h.pct)}>{t('Change')}: {fmtMoney(h.stressed - h.current, ccy)} ({fmtPct(h.pct)})</div>
+      {h.moves && <div style={{ color: DIM }}>{t('Likely range')}: {fmtRange(h.lo, h.hi)}</div>}
       {h.moves && (
         <div style={{ color: DIM }}>
-          β {fmtNum(h.beta)}{h.assumed ? ' (assumed)' : h.beta_raw != null && Math.abs(h.beta_raw - h.beta) >= 0.005 ? ` (measured ${fmtNum(h.beta_raw)})` : ''}
+          β {fmtNum(h.beta)}{h.assumed ? ` (${t('assumed')})` : h.beta_raw != null && Math.abs(h.beta_raw - h.beta) >= 0.005 ? ` (${t('measured {v}', { v: fmtNum(h.beta_raw) })})` : ''}
         </div>
       )}
     </div>
@@ -200,9 +201,9 @@ function HypotheticalShock() {
             ? (f0 || STILL)
             : f0?.assumed ? { ...f0, resid_sd: widest } : f0 || { beta: data.prior?.beta ?? 1, beta_sd: data.prior?.sd ?? 0.5, resid_sd: widest, alpha: null, assumed: true };
           const { m, s } = project(f, logChange, days, useAlpha);
-          const key = h.is_cash ? `Cash ${h.currency}` : h.symbol;
+          const key = h.is_cash ? `${t('Cash')} ${h.currency}` : h.symbol;
           const row = bySym.get(key) || {
-            label: key, symbol: h.symbol, display_name: h.is_cash ? 'Cash' : h.display_name, is_cash: h.is_cash,
+            label: key, symbol: h.symbol, display_name: h.is_cash ? t('Cash') : h.display_name, is_cash: h.is_cash,
             moves: !h.is_cash || !!f0, beta: f.beta, beta_raw: f.beta_raw ?? null, beta_sd: f.beta_sd, alpha: f.alpha ?? null,
             r2: f.r2 ?? null, assumed: !!f.assumed, m, s, current: 0, stressed: 0, sdValue: 0,
           };
@@ -260,17 +261,17 @@ function HypotheticalShock() {
     return { current, stressed, ...bandOf(current, stressed, sd) };
   }, [shown]);
 
-  const usName = data?.us_indexes?.find(i => i.symbol === usIndex)?.name || usIndex;
-  // In running text: "the S&P 500", but plain "bitcoin".
-  const theIndex = usIndex === CRYPTO_INDEX ? 'bitcoin' : `the ${usName}`;
-  const scenarioNote = SCENARIOS.find(s => s.key === scenario)?.note;
+  const usName = t(data?.us_indexes?.find(i => i.symbol === usIndex)?.name || usIndex);
+  // In running text: "the S&P 500", but plain "bitcoin" (Korean: the name alone).
+  const theIndex = isKo() ? usName : usIndex === CRYPTO_INDEX ? 'bitcoin' : `the ${usName}`;
+  const scenarioNote = t(SCENARIOS.find(s => s.key === scenario)?.note || '') || null;
   const assumedCount = selected ? selected.holdings.filter(h => h.assumed).length : 0;
   // What the move implies for Korea, from KOSPI's and the won's own betas to the index.
   const kospiBeta = data?.implied?.kospi?.beta;
   const fxBeta = data?.implied?.krw_per_usd?.beta;
   const kospiMove = kospiBeta != null ? Math.exp(kospiBeta * logChange) - 1 : null;
   const wonMove = fxBeta != null ? Math.exp(-fxBeta * logChange) - 1 : null; // won's value in dollars
-  const lookbackLabel = LOOKBACKS.find(l => l.days === lookback)?.label || `${lookback} days`;
+  const lookbackLabel = t(LOOKBACKS.find(l => l.days === lookback)?.label || t('{n} days', { n: lookback }));
 
   return (
     <div>
@@ -278,21 +279,21 @@ function HypotheticalShock() {
         {/* Scenario presets, crashes then booms */}
         {SCENARIO_GROUPS.map(g => (
           <div key={g.kind} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-            <span style={{ ...dimLabel, width: 56 }}>{g.label}</span>
+            <span style={{ ...dimLabel, width: 56 }}>{t(g.label)}</span>
             {SCENARIOS.filter(s => s.kind === g.kind).map(s => (
-              <button key={s.key} className={`btn ${scenario === s.key ? '' : 'ghost'}`} onClick={() => applyScenario(s)} title={s.note}>
-                {s.label} <span className={scenario === s.key ? '' : s.change < 0 ? 'down' : 'up'} style={{ opacity: 0.9 }}>{fmtChange(s.change)}</span>
+              <button key={s.key} className={`btn ${scenario === s.key ? '' : 'ghost'}`} onClick={() => applyScenario(s)} title={t(s.note)}>
+                {t(s.label)} <span className={scenario === s.key ? '' : s.change < 0 ? 'down' : 'up'} style={{ opacity: 0.9 }}>{fmtChange(s.change)}</span>
               </button>
             ))}
             {g.kind === 'crypto' && (
-              <button className={`btn ${scenario === 'custom' ? '' : 'ghost'}`} onClick={() => setScenario('custom')}>Custom</button>
+              <button className={`btn ${scenario === 'custom' ? '' : 'ghost'}`} onClick={() => setScenario('custom')}>{t('Custom')}</button>
             )}
           </div>
         ))}
 
         {/* Size of the move: negative is a fall, positive a rise */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 6 }}>
-          <span style={dimLabel}>Market change</span>
+          <span style={dimLabel}>{t('Market change')}</span>
           <span style={{ ...dimLabel, fontSize: 11 }}>{SLIDER_MIN}%</span>
           <input
             type="range" min={SLIDER_MIN} max={SLIDER_MAX} step={0.5}
@@ -309,26 +310,26 @@ function HypotheticalShock() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-          <span style={dimLabel}>Index</span>
+          <span style={dimLabel}>{t('Index')}</span>
           {(data?.us_indexes || [{ symbol: '^GSPC', name: 'S&P 500' }, { symbol: '^IXIC', name: 'NASDAQ Composite' }, { symbol: CRYPTO_INDEX, name: 'Bitcoin' }]).map(i => (
-            <button key={i.symbol} className={`btn ${usIndex === i.symbol ? '' : 'ghost'}`} onClick={() => editCustom(setUsIndex)(i.symbol)}>{i.name}</button>
+            <button key={i.symbol} className={`btn ${usIndex === i.symbol ? '' : 'ghost'}`} onClick={() => editCustom(setUsIndex)(i.symbol)}>{t(i.name)}</button>
           ))}
 
-          <span style={{ ...dimLabel, marginLeft: 12 }}>Duration</span>
+          <span style={{ ...dimLabel, marginLeft: 12 }}>{t('Duration')}</span>
           <input type="number" min={0} max={3650} value={durationDays} onChange={e => editCustom(setDurationDays)(e.target.value)} style={inputStyle} />
-          <span style={dimLabel}>days</span>
+          <span style={dimLabel}>{t('days')}</span>
 
           <label style={{ ...dimLabel, display: 'flex', alignItems: 'center', gap: 4, marginLeft: 12, cursor: 'pointer' }}>
-            <input type="checkbox" checked={useAlpha} onChange={e => setUseAlpha(e.target.checked)} /> Include alpha
+            <input type="checkbox" checked={useAlpha} onChange={e => setUseAlpha(e.target.checked)} /> {t('Include alpha')}
           </label>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-          <span style={dimLabel}>Beta from weekly returns over</span>
+          <span style={dimLabel}>{t('Beta from weekly returns over')}</span>
           {LOOKBACKS.map(l => (
-            <button key={l.label} className={`btn ${lookback === l.days ? '' : 'ghost'}`} onClick={() => setLookback(l.days)}>{l.label}</button>
+            <button key={l.label} className={`btn ${lookback === l.days ? '' : 'ghost'}`} onClick={() => setLookback(l.days)}>{t(l.label)}</button>
           ))}
-          <span style={{ ...dimLabel, marginLeft: 12 }}>Show in</span>
+          <span style={{ ...dimLabel, marginLeft: 12 }}>{t('Show in')}</span>
           {['USD', 'KRW'].map(c => (
             <button key={c} className={`btn ${ccy === c ? '' : 'ghost'}`} onClick={() => setCcy(c)}>{c}</button>
           ))}
@@ -336,13 +337,13 @@ function HypotheticalShock() {
 
         <p style={{ margin: '14px 0 0', fontSize: 13, lineHeight: 1.6 }}>
           <span className={cls(change)} style={{ fontWeight: 600 }}>{usName} {fmtPct(change)}</span>
-          {' '}over {days === 1 ? '1 day' : `${days} days`}
+          {' '}{t('over {period}', { period: t(days === 1 ? '{n} day' : '{n} days', { n: days }) })}
           {scenarioNote && <span style={{ color: 'var(--text-dim)' }}> · {scenarioNote}</span>}
           {kospiMove != null && Math.abs(change) > 0 && (
             <span style={{ color: 'var(--text-dim)' }}>
-              <br />Implies KOSPI <span className={cls(kospiMove)}>{fmtPct(kospiMove)}</span>
-              {wonMove != null && <> and the won <span className={cls(wonMove)}>{fmtPct(wonMove)}</span> against the dollar</>}
-              , from how they've moved with {theIndex} over the last {lookbackLabel}
+              <br />{t('Implies KOSPI')} <span className={cls(kospiMove)}>{fmtPct(kospiMove)}</span>
+              {wonMove != null && <> {t('and the won')} <span className={cls(wonMove)}>{fmtPct(wonMove)}</span> {t('against the dollar')}</>}
+              {t(", from how they've moved with {index} over the last {period}", { index: theIndex, period: lookbackLabel })}
             </span>
           )}
         </p>
@@ -351,28 +352,28 @@ function HypotheticalShock() {
       {err && <div className="error" style={{ marginBottom: 16 }}>{err}</div>}
 
       {loading && !data ? (
-        <div className="panel"><div className="loading">Measuring betas…</div></div>
+        <div className="panel"><div className="loading">{t('Measuring betas…')}</div></div>
       ) : results.length === 0 ? (
-        <div className="panel"><div className="loading">No portfolios with priced holdings.</div></div>
+        <div className="panel"><div className="loading">{t('No portfolios with priced holdings.')}</div></div>
       ) : (
         <>
           {/* All portfolios */}
           <div className="panel" style={{ opacity: loading ? 0.6 : 1 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 12 }}>
-              <h2 style={{ margin: 0 }}>Portfolios after the {change >= 0 ? 'rise' : 'fall'}</h2>
+              <h2 style={{ margin: 0 }}>{change >= 0 ? t('Portfolios after the rise') : t('Portfolios after the fall')}</h2>
               <div style={{ fontSize: 13, textAlign: 'right' }}>
-                {shown.length === results.length ? 'All portfolios' : `${shown.length} of ${results.length} portfolios`}: {fmtMoney(totals.current, ccy)} → <span style={{ fontWeight: 600 }}>{fmtMoney(totals.stressed, ccy)}</span>{' '}
+                {shown.length === results.length ? t('All portfolios') : t('{n} of {total} portfolios', { n: shown.length, total: results.length })}: {fmtMoney(totals.current, ccy)} → <span style={{ fontWeight: 600 }}>{fmtMoney(totals.stressed, ccy)}</span>{' '}
                 <span className={cls(totals.stressed - totals.current)}>
                   ({fmtMoney(totals.stressed - totals.current, ccy)}, {fmtPct(totals.current > 0 ? totals.stressed / totals.current - 1 : 0)})
                 </span>
-                <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>likely range {fmtRange(totals.lo, totals.hi)}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>{t('likely range')} {fmtRange(totals.lo, totals.hi)}</div>
               </div>
             </div>
             {/* Which portfolios to compare */}
             <PortfolioChips portfolios={results} hidden={hidden} setHidden={setHidden} />
 
             {shown.length === 0 ? (
-              <div className="loading">No portfolios selected. Pick one or more above.</div>
+              <div className="loading">{t('No portfolios selected. Pick one or more above.')}</div>
             ) : (
             <>
             <div style={{ width: '100%', height: Math.max(160, shown.length * 44 + 40), marginTop: 12 }}>
@@ -399,13 +400,13 @@ function HypotheticalShock() {
             <table style={{ marginTop: 8 }}>
               <thead>
                 <tr>
-                  <th>Portfolio</th>
-                  <th className="num" title="Value-weighted beta to the index. Cash in another currency counts through its exchange rate">Beta</th>
-                  <th className="num">Now</th>
-                  <th className="num">After</th>
-                  <th className="num">Change</th>
+                  <th>{t('Portfolio')}</th>
+                  <th className="num" title={t('Value-weighted beta to the index. Cash in another currency counts through its exchange rate')}>{t('Beta')}</th>
+                  <th className="num">{t('Now')}</th>
+                  <th className="num">{t('After')}</th>
+                  <th className="num">{t('Change')}</th>
                   <th className="num">%</th>
-                  <th className="num" title="One standard deviation either side: about a 2-in-3 chance the result lands here">Likely range</th>
+                  <th className="num" title={t('One standard deviation either side: about a 2-in-3 chance the result lands here')}>{t('Likely range')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -430,7 +431,7 @@ function HypotheticalShock() {
           {selected && (
             <div className="panel" style={{ opacity: loading ? 0.6 : 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-                <h2 style={{ margin: 0 }}><Link to={`/portfolios/${selected.id}`}>{selected.name}</Link> by holding</h2>
+                <h2 style={{ margin: 0 }}><Link to={`/portfolios/${selected.id}`}>{selected.name}</Link> {t('by holding')}</h2>
                 <select value={selected.id} onChange={e => setSelectedId(Number(e.target.value))} style={{ ...inputStyle, width: 'auto' }}>
                   {shown.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
@@ -443,8 +444,8 @@ function HypotheticalShock() {
                     <YAxis type="category" dataKey="label" stroke={DIM} fontSize={11} width={110} interval={0} />
                     <Tooltip content={<HoldingTooltip ccy={ccy} />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="current" name="Now" fill={BASELINE} fillOpacity={BASELINE_OPACITY} radius={2} />
-                    <Bar dataKey="stressed" name={`After the ${change >= 0 ? 'rise' : 'fall'}`} fill={ACCENT} radius={2}>
+                    <Bar dataKey="current" name={t('Now')} fill={BASELINE} fillOpacity={BASELINE_OPACITY} radius={2} />
+                    <Bar dataKey="stressed" name={change >= 0 ? t('After the rise') : t('After the fall')} fill={ACCENT} radius={2}>
                       <LabelList dataKey="pct" content={HoldingPctLabel} />
                     </Bar>
                   </BarChart>
@@ -454,14 +455,14 @@ function HypotheticalShock() {
               <table style={{ marginTop: 8 }}>
                 <thead>
                   <tr>
-                    <th>Holding</th>
-                    <th className="num" title={`Sensitivity to ${theIndex}: 1.5 means it moves about 1.5% for each 1% move in the index. Shrunk toward ${usIndex === CRYPTO_INDEX ? '1 for crypto and 0 for everything else' : '1'} by how uncertain the estimate is; hover a value for the raw estimate`}>Beta</th>
-                    <th className="num" title="Annualized alpha: return beyond what beta explains. Only used when Include alpha is ticked">Alpha /yr</th>
-                    <th className="num" title="Share of the holding's weekly moves the index explains. Low R² = the index is a weak guide to this holding, so its range is wide">R²</th>
-                    <th className="num">Now</th>
-                    <th className="num">After</th>
+                    <th>{t('Holding')}</th>
+                    <th className="num" title={t('Sensitivity to {index}: 1.5 means it moves about 1.5% for each 1% move in the index. Shrunk toward {prior} by how uncertain the estimate is; hover a value for the raw estimate', { index: theIndex, prior: usIndex === CRYPTO_INDEX ? t('1 for crypto and 0 for everything else') : '1' })}>{t('Beta')}</th>
+                    <th className="num" title={t('Annualized alpha: return beyond what beta explains. Only used when Include alpha is ticked')}>{t('Alpha /yr')}</th>
+                    <th className="num" title={t("Share of the holding's weekly moves the index explains. Low R² = the index is a weak guide to this holding, so its range is wide")}>R²</th>
+                    <th className="num">{t('Now')}</th>
+                    <th className="num">{t('After')}</th>
                     <th className="num">%</th>
-                    <th className="num" title="One standard deviation either side: about a 2-in-3 chance the result lands here">Likely range</th>
+                    <th className="num" title={t('One standard deviation either side: about a 2-in-3 chance the result lands here')}>{t('Likely range')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -473,12 +474,12 @@ function HypotheticalShock() {
                           <div style={{ fontSize: 11, color: 'var(--text-dim)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.display_name}</div>
                         )}
                         {h.is_cash && h.moves && (
-                          <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>moves with the exchange rate</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>{t('moves with the exchange rate')}</div>
                         )}
                       </td>
-                      <td className="num" title={h.beta_raw != null ? `Measured ${fmtNum(h.beta_raw)} ± ${fmtNum(h.beta_sd)} before shrinkage` : undefined}>
+                      <td className="num" title={h.beta_raw != null ? t('Measured {v} ± {sd} before shrinkage', { v: fmtNum(h.beta_raw), sd: fmtNum(h.beta_sd) }) : undefined}>
                         {h.assumed
-                          ? <span className="pill amber" title="Too little history to measure; uses the typical stock's beta of 1.00">{fmtNum(h.beta)}*</span>
+                          ? <span className="pill amber" title={t("Too little history to measure; uses the typical stock's beta of 1.00")}>{fmtNum(h.beta)}*</span>
                           : fmtNum(h.beta)}
                       </td>
                       <td className={`num ${useAlpha ? cls(h.alpha) : ''}`} style={useAlpha ? undefined : { color: 'var(--text-dim)' }}>{h.is_cash ? '–' : fmtPct(h.alpha)}</td>
@@ -493,13 +494,37 @@ function HypotheticalShock() {
               </table>
               {assumedCount > 0 && (
                 <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--amber)' }}>
-                  * {assumedCount} holding{assumedCount > 1 ? 's' : ''} with too little history to measure (under 26 weeks); given the typical stock's beta of 1.00 and a wide range.
+                  * {t(assumedCount > 1 ? "{n} holdings with too little history to measure (under 26 weeks); given the typical stock's beta of 1.00 and a wide range." : "{n} holding with too little history to measure (under 26 weeks); given the typical stock's beta of 1.00 and a wide range.", { n: assumedCount })}
                 </p>
               )}
             </div>
           )}
 
           <div style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6, margin: '0 4px' }}>
+            {isKo() ? (
+              <>
+                <p style={{ margin: '0 0 6px' }}>
+                  <strong style={{ color: 'var(--text)' }}>추정 방법.</strong>{' '}
+                  각 보유 종목의 베타는 {theIndex}에 대한 민감도로, 최근 {lookbackLabel} 동안의 주간 수익률로 측정합니다 — 공시되는 베타의 일반적인 기준이며,
+                  서울과 뉴욕의 마감 시간 차이에 흔들리지 않습니다. 수익률은 {ccy} 기준으로 측정하므로 시장 변동과 함께 오는 환율 변동도 반영됩니다:
+                  달러로 본 한국 주식이나 원화 현금에는 하락장에서 원화가 약해지는 경향이 담깁니다. 한국 종목도 KOSPI가 같은 폭으로 움직인다고 가정하지 않고
+                  {theIndex}에 직접 대해 측정하므로, 그 지수 변동이 한국 종목에 주는 영향을 그대로 보여줍니다.
+                </p>
+                <p style={{ margin: '0 0 6px' }}>
+                  그런 다음 모든 베타를 {usIndex === CRYPTO_INDEX
+                    ? <>암호화폐는 비트코인과 거의 1:1로 움직이므로 1로, 주식·펀드·금은 대체로 그렇지 않으므로 0으로</>
+                    : <>평균 주식의 베타인 1로</>} 불확실한 정도에 비례해 조정합니다(Vasicek 조정): 정밀하게 측정된 인덱스 펀드는 자기 값을 유지하고,
+                  기록이 짧거나 불규칙하면 평균에 가까워집니다. 보유 종목은 (1 + 변동)<sup>β</sup>만큼 움직이며, 이는 작은 변동에서는 β × 변동과 같고
+                  큰 하락에서도 −100% 아래로 떨어지지 않습니다. 알파는 0으로 가정합니다 — 몇 년간의 초과 성과는 대부분 잡음이기 때문입니다 — 알파 포함을 선택하지 않는 한.
+                </p>
+                <p style={{ margin: 0 }}>
+                  예상 범위는 양쪽으로 1 표준편차(약 3분의 2 확률)이며, 각 베타의 불확실성과 지수로 설명되지 않는 종목 자체의 변동을 변동 기간에 걸쳐 합친 것입니다.
+                  R²가 낮으면(주황색) 범위가 넓습니다. 종목 간 이런 변동은 서로 독립이라고 가정합니다. 하락장에서 종목들이 평소보다 더 강하게 함께 움직이는 현상은
+                  모델이 반영하지 못하므로, 실제 폭락 손실은 이보다 다소 클 수 있습니다.
+                </p>
+              </>
+            ) : (
+            <>
             <p style={{ margin: '0 0 6px' }}>
               <strong style={{ color: 'var(--text)' }}>How this is estimated.</strong>{' '}
               Each holding's beta is its sensitivity to {theIndex}, measured from weekly returns over the last {lookbackLabel} — the usual basis for a published beta, and one that
@@ -519,6 +544,8 @@ function HypotheticalShock() {
               doesn't explain, over the length of the move; a low R² (amber) means a wide range. It assumes those swings are independent between holdings. The model can't
               capture stocks moving together more tightly in a crash than in calm markets, which tends to make real crash losses somewhat worse than this.
             </p>
+            </>
+            )}
           </div>
         </>
       )}
@@ -537,12 +564,12 @@ export default function StressTest() {
   return (
     <div>
       <div className="panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, padding: '14px 20px' }}>
-        <h2 style={{ margin: 0 }}>Market Stress Test</h2>
+        <h2 style={{ margin: 0 }}>{t('Market Stress Test')}</h2>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }} role="tablist">
           {MODES.map(m => (
-            <button key={m.key} role="tab" aria-selected={mode === m.key} title={m.hint}
+            <button key={m.key} role="tab" aria-selected={mode === m.key} title={t(m.hint)}
               className={`btn ${mode === m.key ? '' : 'ghost'}`} onClick={() => setMode(m.key)}>
-              {m.label}
+              {t(m.label)}
             </button>
           ))}
         </div>

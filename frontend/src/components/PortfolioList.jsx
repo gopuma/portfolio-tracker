@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api } from '../api.js';
+import { t, isKo } from '../i18n.jsx';
 
 function fmtMoney(n, ccy) {
   if (n == null || isNaN(n)) return '–';
@@ -20,9 +21,9 @@ function SortTh({ label, col, num, sortKey, sortDir, onSort }) {
       className={num ? 'num' : undefined}
       onClick={() => onSort(col)}
       style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
-      title="Click to sort"
+      title={t('Click to sort')}
     >
-      {label}<span style={{ opacity: active ? 1 : 0.25, marginLeft: 4 }}>{active ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>
+      {t(label)}<span style={{ opacity: active ? 1 : 0.25, marginLeft: 4 }}>{active ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>
     </th>
   );
 }
@@ -71,9 +72,9 @@ export default function PortfolioList() {
     const ids = [...selected];
     if (ids.length === 0) return;
     const names = (data?.portfolios || []).filter(p => selected.has(p.id)).map(p => p.name);
-    if (!window.confirm(`Delete ${ids.length} portfolio${ids.length > 1 ? 's' : ''} (${names.join(', ')})?`)) return;
+    if (!window.confirm(t(ids.length > 1 ? 'Delete {n} portfolios ({names})?' : 'Delete {n} portfolio ({names})?', { n: ids.length, names: names.join(', ') }))) return;
     try { await Promise.all(ids.map(id => api.deletePortfolio(id))); }
-    catch (e) { window.alert(`Some deletions failed: ${e.message}`); }
+    catch (e) { window.alert(t('Some deletions failed: {err}', { err: e.message })); }
     finally { exitRemoveMode(); load(); }
   };
 
@@ -108,30 +109,30 @@ export default function PortfolioList() {
     <>
       <div className="panel">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <h2 style={{ margin: 0 }}>My Portfolios</h2>
+          <h2 style={{ margin: 0 }}>{t('My Portfolios')}</h2>
           {creating ? (
             <form onSubmit={create} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto', justifyContent: 'flex-end' }}>
               <input
                 autoFocus value={name} onChange={e => setName(e.target.value)}
-                placeholder="Portfolio name" disabled={busy}
+                placeholder={t('Portfolio name')} disabled={busy}
                 style={{ background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', padding: '6px 8px', fontSize: 13, width: 200 }}
               />
-              <button className="btn" type="submit" disabled={busy || !name.trim()}>{busy ? 'Creating…' : 'Create'}</button>
-              <button className="btn ghost" type="button" onClick={() => { setCreating(false); setName(''); }} disabled={busy}>Cancel</button>
+              <button className="btn" type="submit" disabled={busy || !name.trim()}>{busy ? t('Creating…') : t('Create')}</button>
+              <button className="btn ghost" type="button" onClick={() => { setCreating(false); setName(''); }} disabled={busy}>{t('Cancel')}</button>
             </form>
           ) : removeMode ? (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto', justifyContent: 'flex-end' }}>
               <button className="btn" onClick={removeSelected} disabled={selected.size === 0} style={{ background: 'var(--red)' }}>
-                Remove selected ({selected.size})
+                {t('Remove selected ({n})', { n: selected.size })}
               </button>
-              <button className="btn ghost" onClick={exitRemoveMode}>Cancel</button>
+              <button className="btn ghost" onClick={exitRemoveMode}>{t('Cancel')}</button>
             </div>
           ) : (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto', justifyContent: 'flex-end' }}>
-              <button className="btn" onClick={() => setCreating(true)}>+ New portfolio</button>
+              <button className="btn" onClick={() => setCreating(true)}>{t('+ New portfolio')}</button>
               {hasPortfolios && (
                 <button className="btn ghost" onClick={() => setRemoveMode(true)} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}>
-                  Remove
+                  {t('Remove')}
                 </button>
               )}
             </div>
@@ -142,9 +143,9 @@ export default function PortfolioList() {
 
       <div className="panel">
         {loading ? (
-          <div className="loading">Loading portfolios…</div>
+          <div className="loading">{t('Loading portfolios…')}</div>
         ) : !data || data.count === 0 ? (
-          <div className="loading">No portfolios yet — create one to start tracking returns.</div>
+          <div className="loading">{t('No portfolios yet — create one to start tracking returns.')}</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table>
@@ -157,7 +158,7 @@ export default function PortfolioList() {
                         checked={allEmptySelected}
                         onChange={toggleAll}
                         disabled={emptyIds.length === 0}
-                        title={emptyIds.length === 0 ? 'No empty portfolios to remove' : 'Select all empty portfolios'}
+                        title={emptyIds.length === 0 ? t('No empty portfolios to remove') : t('Select all empty portfolios')}
                         style={{ cursor: emptyIds.length === 0 ? 'not-allowed' : 'pointer', width: 18, height: 18 }}
                       />
                     </th>
@@ -185,7 +186,7 @@ export default function PortfolioList() {
                               type="checkbox"
                               checked={selected.has(p.id)}
                               onChange={() => toggle(p.id)}
-                              title={`Select ${p.name}`}
+                              title={t('Select {name}', { name: p.name })}
                               style={{ cursor: 'pointer', width: 18, height: 18 }}
                             />
                           )}
@@ -204,9 +205,19 @@ export default function PortfolioList() {
               </tbody>
             </table>
             <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 12, marginBottom: 0, lineHeight: 1.6 }}>
-              <strong style={{ color: 'var(--text)' }}>Inception</strong> = current value vs. your cost basis.
-              <strong style={{ color: 'var(--text)' }}> 1Y/3Y/5Y</strong> = how the current holdings would have performed over
-              that trailing window, value-weighted. Values are converted to each portfolio's base currency at the latest FX rate.
+              {isKo() ? (
+                <>
+                  <strong style={{ color: 'var(--text)' }}>설정 이후</strong> = 매입 원가 대비 현재 가치.
+                  <strong style={{ color: 'var(--text)' }}> 1년/3년/5년</strong> = 현재 보유 종목이 해당 기간 동안 거두었을 수익률(가치 가중).
+                  금액은 최신 환율로 각 포트폴리오의 기준 통화로 환산합니다.
+                </>
+              ) : (
+                <>
+                  <strong style={{ color: 'var(--text)' }}>Inception</strong> = current value vs. your cost basis.
+                  <strong style={{ color: 'var(--text)' }}> 1Y/3Y/5Y</strong> = how the current holdings would have performed over
+                  that trailing window, value-weighted. Values are converted to each portfolio's base currency at the latest FX rate.
+                </>
+              )}
             </p>
           </div>
         )}

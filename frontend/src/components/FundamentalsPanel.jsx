@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { t } from '../i18n.jsx';
 
 /**
  * Uniform fundamental metrics for one stock: valuation multiples, per-share figures,
@@ -37,8 +38,8 @@ const NA_REASON = {
 
 function Cell({ label, value, title, color, muted }) {
   return (
-    <div title={title}>
-      <div className="metric-label">{label}</div>
+    <div title={title ? t(title) : undefined}>
+      <div className="metric-label">{t(label)}</div>
       <div
         className={`metric ${color || ''}`}
         style={{ fontSize: 20, color: muted ? 'var(--text-dim)' : undefined }}
@@ -56,9 +57,9 @@ function MultipleCell({ label, value, na, title }) {
   return (
     <Cell
       label={label}
-      value={reason || fmtRatio(value)}
+      value={reason ? t(reason) : fmtRatio(value)}
       muted={!!reason}
-      title={reason ? `${title} — not meaningful: ${na.replace(/_/g, ' ')}` : title}
+      title={reason ? `${t(title)} — ${t('not meaningful: {why}', { why: t(na.replace(/_/g, ' ')) })}` : title}
     />
   );
 }
@@ -85,36 +86,36 @@ export default function FundamentalsPanel({ symbol }) {
     <div className="panel">
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <h2 style={{ margin: 0 }}>
-          Fundamentals
+          {t('Fundamentals')}
           {data?.available && (
             <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--text-dim)', fontSize: 13 }}>
-              {' '}(TTM to {data.as_of}{ccy ? ` · ${ccy}` : ''})
+              {' '}({t('TTM to {date}', { date: data.as_of })}{ccy ? ` · ${ccy}` : ''})
             </span>
           )}
         </h2>
         {data?.available && data.price != null && (
           <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
-            Multiples at {fmtPerShare(data.price, ccy)} {ccy}
-            {data.price_date ? ` (close ${data.price_date})` : ''}
+            {t('Multiples at {price}', { price: `${fmtPerShare(data.price, ccy)} ${ccy}` })}
+            {data.price_date ? ` (${t('close {date}', { date: data.price_date })})` : ''}
           </span>
         )}
       </div>
 
       {loading ? (
-        <div className="loading">Loading fundamentals…</div>
+        <div className="loading">{t('Loading fundamentals…')}</div>
       ) : err ? (
-        <div className="error">Failed to load: {err}</div>
+        <div className="error">{t('Failed to load: {err}', { err })}</div>
       ) : !data?.available ? (
         <div className="loading">
           {data?.reason === 'no_statements'
-            ? 'No financial statements for this instrument — ETFs and funds hold securities rather than running a business, so per-company metrics do not apply.'
+            ? t('No financial statements for this instrument — ETFs and funds hold securities rather than running a business, so per-company metrics do not apply.')
             : data?.reason === 'insufficient_history'
-              ? `Only ${data.quarters} quarter${data.quarters === 1 ? '' : 's'} of filings available — a trailing-twelve-month figure needs 4.`
-              : 'Fundamentals unavailable for this instrument.'}
+              ? t(data.quarters === 1 ? 'Only {n} quarter of filings available — a trailing-twelve-month figure needs 4.' : 'Only {n} quarters of filings available — a trailing-twelve-month figure needs 4.', { n: data.quarters })
+              : t('Fundamentals unavailable for this instrument.')}
         </div>
       ) : (
         <>
-          <SectionLabel>Valuation</SectionLabel>
+          <SectionLabel>{t('Valuation')}</SectionLabel>
           <div className="grid-4" style={{ rowGap: 16 }}>
             <MultipleCell label="PER" value={data.valuation.per} na={data.valuation.per_na}
               title="Price / trailing-twelve-month earnings per share" />
@@ -126,7 +127,7 @@ export default function FundamentalsPanel({ symbol }) {
               title="Price / trailing-twelve-month operating cash flow per share" />
           </div>
 
-          <SectionLabel>Per share ({ccy})</SectionLabel>
+          <SectionLabel>{t('Per share ({ccy})', { ccy })}</SectionLabel>
           <div className="grid-4" style={{ rowGap: 16 }}>
             <Cell label="EPS" value={fmtPerShare(data.per_share.eps, ccy)} color={sign(data.per_share.eps)}
               title="Trailing-twelve-month net income ÷ diluted shares. Derived rather than read from the filing, so it is present even where the reported figure is not." />
@@ -138,7 +139,7 @@ export default function FundamentalsPanel({ symbol }) {
               title="Trailing-twelve-month operating cash flow ÷ diluted shares" />
           </div>
 
-          <SectionLabel>Profitability</SectionLabel>
+          <SectionLabel>{t('Profitability')}</SectionLabel>
           <div className="grid-4" style={{ rowGap: 16 }}>
             <Cell label="ROE" value={fmtPct(data.profitability.roe)} color={sign(data.profitability.roe)}
               title="Trailing-twelve-month net income ÷ average shareholders' equity over the same window" />
@@ -158,7 +159,7 @@ export default function FundamentalsPanel({ symbol }) {
               title="Latest close × diluted shares" />
           </div>
 
-          <SectionLabel>Balance sheet</SectionLabel>
+          <SectionLabel>{t('Balance sheet')}</SectionLabel>
           <div className="grid-4" style={{ rowGap: 16 }}>
             <Cell label="Debt / Equity" value={fmtRatio(data.health.debt_to_equity)}
               title="Total debt ÷ shareholders' equity" />
@@ -172,12 +173,10 @@ export default function FundamentalsPanel({ symbol }) {
           </div>
 
           <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 16 }}>
-            Trailing twelve months, {data.ttm_start} → {data.as_of}, derived from the company's filings in {ccy}.
-            Ratios are currency-neutral and comparable across markets; per-share amounts are in {ccy}.
+            {t("Trailing twelve months, {from} → {to}, derived from the company's filings in {ccy}.", { from: data.ttm_start, to: data.as_of, ccy })}
+            {' '}{t('Ratios are currency-neutral and comparable across markets; per-share amounts are in {ccy}.', { ccy })}
             {data.pending_quarter && (
-              <> The {data.pending_quarter} quarter has no statement data from our source yet, so it is excluded —
-              every figure here comes from the same four quarters. Sites that fold a partial quarter into some
-              metrics but not others may therefore show a different PER or EPS for this stock.</>
+              <> {t('The {q} quarter has no statement data from our source yet, so it is excluded — every figure here comes from the same four quarters. Sites that fold a partial quarter into some metrics but not others may therefore show a different PER or EPS for this stock.', { q: data.pending_quarter })}</>
             )}
           </div>
         </>

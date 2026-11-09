@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api.js';
+import { t } from '../i18n.jsx';
 
 function fmtNum(n, d = 2) {
   if (n == null || isNaN(n)) return '–';
@@ -69,16 +70,16 @@ export default function PortfolioAnalytics({ portfolioId, nameBySym = {}, reload
   return (
     <div className="panel">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <h2 style={{ margin: 0 }}>Portfolio Analytics</h2>
+        <h2 style={{ margin: 0 }}>{t('Portfolio Analytics')}</h2>
         {/* Stays right-aligned when the row wraps under the heading. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginLeft: 'auto', justifyContent: 'flex-end' }}>
           {PRESETS.map(p => (
-            <button key={p.label} className={`btn ${days === p.days ? '' : 'ghost'}`} onClick={() => { setDays(p.days); setDraft(String(p.days)); }}>{p.label}</button>
+            <button key={p.label} className={`btn ${days === p.days ? '' : 'ghost'}`} onClick={() => { setDays(p.days); setDraft(String(p.days)); }}>{t(p.label)}</button>
           ))}
           <input type="number" min={1} max={MAX_DAYS} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') applyDraft(); }} style={inputStyle} />
-          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>days</span>
-          <button className="btn" onClick={applyDraft}>Apply</button>
-          <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-dim)' }}>Risk-free</span>
+          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{t('days')}</span>
+          <button className="btn" onClick={applyDraft}>{t('Apply')}</button>
+          <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-dim)' }}>{t('Risk-free')}</span>
           <input type="number" step={0.5} min={0} max={20} value={(rf * 100).toString()} onChange={e => setRf(Math.max(0, Number(e.target.value) / 100))} style={{ ...inputStyle, width: 64 }} />
           <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>%</span>
         </div>
@@ -87,24 +88,24 @@ export default function PortfolioAnalytics({ portfolioId, nameBySym = {}, reload
       {err && <div className="error" style={{ marginTop: 12 }}>{err}</div>}
 
       {loading ? (
-        <div className="loading" style={{ marginTop: 12 }}>Loading analytics…</div>
+        <div className="loading" style={{ marginTop: 12 }}>{t('Loading analytics…')}</div>
       ) : assets.length === 0 ? (
         <div className="loading" style={{ marginTop: 12 }}>
-          Not enough price history in this window to compute analytics — try a longer period.
+          {t('Not enough price history in this window to compute analytics — try a longer period.')}
         </div>
       ) : (
         <>
           <table style={{ marginTop: 14 }}>
             <thead>
               <tr>
-                <th>Symbol</th>
-                <th className="num" title="Annualized realized return (CAGR)">Return</th>
-                <th className="num" title="Total return over the window">Total</th>
-                <th className="num" title="Annualized volatility">Vol</th>
-                <th className="num" title="Annualized downside deviation">Downside</th>
-                <th className="num" title="Worst peak-to-trough loss">Max DD</th>
-                <th className="num" title="Return per unit of total risk">Sharpe</th>
-                <th className="num" title="Return per unit of downside risk">Sortino</th>
+                <th>{t('Symbol')}</th>
+                <th className="num" title={t('Annualized realized return (CAGR)')}>{t('Return')}</th>
+                <th className="num" title={t('Total return over the window')}>{t('Total')}</th>
+                <th className="num" title={t('Annualized volatility')}>{t('Vol')}</th>
+                <th className="num" title={t('Annualized downside deviation')}>{t('Downside')}</th>
+                <th className="num" title={t('Worst peak-to-trough loss')}>{t('Max DD')}</th>
+                <th className="num" title={t('Return per unit of total risk')}>{t('Sharpe')}</th>
+                <th className="num" title={t('Return per unit of downside risk')}>{t('Sortino')}</th>
               </tr>
             </thead>
             <tbody>
@@ -127,7 +128,7 @@ export default function PortfolioAnalytics({ portfolioId, nameBySym = {}, reload
           </table>
 
           {/* Correlation matrix of daily returns over the same window. */}
-          <h3 style={{ margin: '20px 0 0' }}>Correlation Matrix <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(daily returns)</span></h3>
+          <h3 style={{ margin: '20px 0 0' }}>{t('Correlation Matrix')} <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>{t('(daily returns)')}</span></h3>
           {corr?.symbols?.length > 1 ? (
             <div style={{ overflowX: 'auto', marginTop: 10 }}>
               <table style={{ fontSize: 11 }}>
@@ -165,13 +166,13 @@ export default function PortfolioAnalytics({ portfolioId, nameBySym = {}, reload
             </div>
           ) : (
             <div className="loading" style={{ marginTop: 10 }}>
-              Need at least two holdings with overlapping daily returns in this window to compute correlations.
+              {t('Need at least two holdings with overlapping daily returns in this window to compute correlations.')}
             </div>
           )}
 
           <p style={{ marginTop: 12, marginBottom: 0, fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6 }}>
-            Return/Vol/Downside/Max DD/Sharpe/Sortino are computed over the selected window. Correlation:{' '}
-            <span className="up">green = diversifying</span>, <span className="down">red = move together</span>.
+            {t('Return/Vol/Downside/Max DD/Sharpe/Sortino are computed over the selected window. Correlation:')}{' '}
+            <span className="up">{t('green = diversifying')}</span>, <span className="down">{t('red = move together')}</span>.
           </p>
         </>
       )}

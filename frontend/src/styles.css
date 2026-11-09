@@ -117,3 +117,7 @@ tr:hover td { background: var(--panel-2); }
 .headline-list { list-style: none; padding: 0; margin: 0; }
 .headline-list li { padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; }
 .headline-list li:last-child { border-bottom: none; }
+
+/* Nav and the language toggle, together at the right of the header. */
+.header-right { display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap; }
+.header .lang-toggle { padding: 4px 10px; font-size: 13px; }

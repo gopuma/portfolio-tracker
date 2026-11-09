@@ -8,36 +8,40 @@ import AuditPage from './components/AuditPage.jsx';
 import Research from './components/Research.jsx';
 import StressTest from './components/StressTest.jsx';
 import Projection from './components/Projection.jsx';
+import { t, LanguageToggle } from './i18n.jsx';
 
 export default function App() {
   const linkClass = ({ isActive }) => (isActive ? 'active' : '');
   return (
     <div className="app">
       <header className="header">
-        <h1>Portfolio Tracker</h1>
-        <nav>
-          <NavLink end to="/" className={linkClass}>
-            Overview
-          </NavLink>
-          <NavLink to="/portfolios" className={linkClass}>
-            Portfolios
-          </NavLink>
-          <NavLink to="/stress" className={linkClass}>
-            Stress Test
-          </NavLink>
-          <NavLink to="/projection" className={linkClass}>
-            Projection
-          </NavLink>
-          <NavLink to="/research" className={linkClass}>
-            Research
-          </NavLink>
-          <NavLink to="/predictions" className={linkClass}>
-            Predictions
-          </NavLink>
-          <NavLink to="/audit" className={linkClass}>
-            Audit
-          </NavLink>
-        </nav>
+        <h1>{t('Portfolio Tracker')}</h1>
+        <div className="header-right">
+          <nav>
+            <NavLink end to="/" className={linkClass}>
+              {t('Overview')}
+            </NavLink>
+            <NavLink to="/portfolios" className={linkClass}>
+              {t('Portfolios')}
+            </NavLink>
+            <NavLink to="/stress" className={linkClass}>
+              {t('Stress Test')}
+            </NavLink>
+            <NavLink to="/projection" className={linkClass}>
+              {t('Projection')}
+            </NavLink>
+            <NavLink to="/research" className={linkClass}>
+              {t('Research')}
+            </NavLink>
+            <NavLink to="/predictions" className={linkClass}>
+              {t('Predictions')}
+            </NavLink>
+            <NavLink to="/audit" className={linkClass}>
+              {t('Audit')}
+            </NavLink>
+          </nav>
+          <LanguageToggle />
+        </div>
       </header>
 
       <Routes>

@@ -3,6 +3,7 @@ import { ComposedChart, LineChart, Line, Area, Brush, XAxis, YAxis, Tooltip, Leg
 import { api } from '../api.js';
 import { rowsOf, mergeGold, averages, axisRange } from '../goldSeries.js';
 import { usdToKrw } from '../btcSeries.js';
+import { t, locale } from '../i18n.jsx';
 
 const UPBIT_SYMBOL = 'UPBIT-KRW-BTC';
 const GLOBAL_SYMBOL = 'BTC-USD';
@@ -110,86 +111,86 @@ export default function BitcoinPanel({ reloadKey = 0 }) {
     setDays(Math.min(n, MAX_DAYS));
   };
 
-  if (err && !data) return <div className="panel"><h2>Bitcoin</h2><div className="error">Failed: {err}</div></div>;
-  if (!data) return <div className="panel"><h2>Bitcoin</h2><div className="loading">Loading…</div></div>;
+  if (err && !data) return <div className="panel"><h2>{t('Bitcoin')}</h2><div className="error">{t('Failed: {err}', { err })}</div></div>;
+  if (!data) return <div className="panel"><h2>{t('Bitcoin')}</h2><div className="loading">{t('Loading…')}</div></div>;
 
   const { upbit, global, fx, premium } = data;
   const live = upbit.live;
   const asOf = lastDataDate
-    ? new Date(`${lastDataDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    ? new Date(`${lastDataDate}T00:00:00`).toLocaleDateString(locale(), { month: 'short', day: 'numeric', year: 'numeric' })
     : null;
 
   return (
     <div className="panel">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <h2 style={{ margin: 0 }}>Bitcoin: Upbit vs Global</h2>
-        {asOf && <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>Data as of {asOf}</span>}
+        <h2 style={{ margin: 0 }}>{t('Bitcoin: Upbit vs Global')}</h2>
+        {asOf && <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{t('Data as of {date}', { date: asOf })}</span>}
       </div>
       <div className="grid-3" style={{ marginTop: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="metric-label">
-            Upbit (KRW)
-            {live && <span className="pill green" style={{ marginLeft: 8 }}>LIVE</span>}
+            {t('Upbit (KRW)')}
+            {live && <span className="pill green" style={{ marginLeft: 8 }}>{t('LIVE')}</span>}
           </div>
           <div className="metric">{fmtNum(upbit.latest_krw, 0)} <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>KRW</span></div>
           {live && (
             <div style={{ fontSize: 12, marginTop: 2 }}>
               <span className={tone(live.change)}>{live.change > 0 ? '▲' : live.change < 0 ? '▼' : ''} {fmtNum(live.change, 0)} ({fmtPct(live.change_pct)})</span>
-              <span style={{ color: 'var(--text-dim)' }}> since 09:00 KST</span>
+              <span style={{ color: 'var(--text-dim)' }}> {t('since 09:00 KST')}</span>
             </div>
           )}
           <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>
             {upbit.display_name} · {upbit.symbol}
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>
-            {live ? `as of ${fmtKstTime(live.traded_at)} KST` : 'latest stored close'}
+            {live ? t('as of {time} KST', { time: fmtKstTime(live.traded_at) }) : t('latest stored close')}
           </div>
           <div style={{ fontSize: 12, marginTop: 4 }}>
-            30d: <span className={tone(upbit.return_30d)}>{fmtPct(upbit.return_30d)}</span>
+            {t('30d:')} <span className={tone(upbit.return_30d)}>{fmtPct(upbit.return_30d)}</span>
           </div>
           <AvgBlock avgs={upbitAvgs} current={upbit.latest_krw} />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <div className="metric-label">Global (USD)</div>
+          <div className="metric-label">{t('Global (USD)')}</div>
           <div className="metric">{fmtNum(global.latest_usd, 0)} <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>USD</span></div>
           {global.live?.change != null && (
             <div style={{ fontSize: 12, marginTop: 2 }}>
               <span className={tone(global.live.change)}>{global.live.change > 0 ? '▲' : global.live.change < 0 ? '▼' : ''} {fmtNum(global.live.change, 0)} ({fmtPct(global.live.change_percent / 100)})</span>
-              <span style={{ color: 'var(--text-dim)' }}> since 00:00 UTC</span>
+              <span style={{ color: 'var(--text-dim)' }}> {t('since 00:00 UTC')}</span>
             </div>
           )}
           <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>
             {global.display_name} · {global.symbol}
           </div>
           <div style={{ fontSize: 12, marginTop: 4 }}>
-            30d: <span className={tone(global.return_30d)}>{fmtPct(global.return_30d)}</span>
+            {t('30d:')} <span className={tone(global.return_30d)}>{fmtPct(global.return_30d)}</span>
             {global.return_30d_krw != null && (
               <span style={{ color: 'var(--text-dim)' }}>
-                {' '}· in KRW <span className={tone(global.return_30d_krw)}>{fmtPct(global.return_30d_krw)}</span>
+                {' '}· {t('in KRW')} <span className={tone(global.return_30d_krw)}>{fmtPct(global.return_30d_krw)}</span>
               </span>
             )}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>
-            ≈ {fmtNum(global.latest_krw, 0)} KRW at today's rate
+            ≈ {t('{v} KRW at today\'s rate', { v: fmtNum(global.latest_krw, 0) })}
           </div>
           <AvgBlock avgs={globalAvgs} current={global.latest_krw} />
         </div>
 
         <div>
-          <div className="metric-label">Korean Premium (Upbit − Global)</div>
+          <div className="metric-label">{t('Korean Premium (Upbit − Global)')}</div>
           <div className={`metric ${tone(premium.pct)}`}>{fmtPct(premium.pct)}</div>
           <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
             {fmtNum(premium.krw, 0)} KRW · USD/KRW {fmtNum(fx.krw_per_usd, 2)}
           </div>
           <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-dim)' }}>
-            30d return diff (both in KRW): <span className={tone(premium.return_30d_diff)}>{fmtPct(premium.return_30d_diff)}</span>
+            {t('30d return diff (both in KRW):')} <span className={tone(premium.return_30d_diff)}>{fmtPct(premium.return_30d_diff)}</span>
           </div>
         </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginTop: 16 }}>
-        <h3 style={{ margin: 0 }}>Price Trend</h3>
+        <h3 style={{ margin: 0 }}>{t('Price Trend')}</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {PRESETS.map(p => (
             <button
@@ -197,7 +198,7 @@ export default function BitcoinPanel({ reloadKey = 0 }) {
               className={`btn ${days === p.days ? '' : 'ghost'}`}
               onClick={() => { setDays(p.days); setDraft(String(p.days)); }}
             >
-              {p.label}
+              {t(p.label)}
             </button>
           ))}
           <input
@@ -218,13 +219,13 @@ export default function BitcoinPanel({ reloadKey = 0 }) {
               fontVariantNumeric: 'tabular-nums',
             }}
           />
-          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>days</span>
-          <button className="btn" onClick={applyDraft}>Apply</button>
+          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{t('days')}</span>
+          <button className="btn" onClick={applyDraft}>{t('Apply')}</button>
         </div>
       </div>
 
       {chartData.length === 0 ? (
-        <div className="loading">No price history yet.</div>
+        <div className="loading">{t('No price history yet.')}</div>
       ) : (
         <>
           <div style={{ width: '100%', height: 420, marginTop: 12 }}>
@@ -239,10 +240,10 @@ export default function BitcoinPanel({ reloadKey = 0 }) {
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} verticalAlign="top" />
                 {/* The gap itself, shaded: orange where Upbit is above, blue where below. */}
-                <Area type="monotone" dataKey="above" name="Upbit above" fill={UPBIT_COLOR} fillOpacity={0.45} stroke="none" legendType="square" tooltipType="none" connectNulls isAnimationActive={false} />
-                <Area type="monotone" dataKey="below" name="Upbit below" fill={GLOBAL_COLOR} fillOpacity={0.45} stroke="none" legendType="square" tooltipType="none" connectNulls isAnimationActive={false} />
-                <Line type="monotone" dataKey="krx" name="Upbit" stroke={UPBIT_COLOR} dot={false} strokeWidth={1.5} connectNulls isAnimationActive={false} />
-                <Line type="monotone" dataKey="intl" name="Global (in KRW)" stroke={GLOBAL_COLOR} dot={false} strokeWidth={1.5} connectNulls isAnimationActive={false} />
+                <Area type="monotone" dataKey="above" name={t('Upbit above')} fill={UPBIT_COLOR} fillOpacity={0.45} stroke="none" legendType="square" tooltipType="none" connectNulls isAnimationActive={false} />
+                <Area type="monotone" dataKey="below" name={t('Upbit below')} fill={GLOBAL_COLOR} fillOpacity={0.45} stroke="none" legendType="square" tooltipType="none" connectNulls isAnimationActive={false} />
+                <Line type="monotone" dataKey="krx" name={t('Upbit')} stroke={UPBIT_COLOR} dot={false} strokeWidth={1.5} connectNulls isAnimationActive={false} />
+                <Line type="monotone" dataKey="intl" name={t('Global (in KRW)')} stroke={GLOBAL_COLOR} dot={false} strokeWidth={1.5} connectNulls isAnimationActive={false} />
                 <Brush
                   key={days}
                   dataKey="date"
@@ -259,16 +260,16 @@ export default function BitcoinPanel({ reloadKey = 0 }) {
             </ResponsiveContainer>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
-            Axis in millions of won. Global bitcoin (BTC-USD) converted to KRW at each day's USD/KRW rate (weekends use Friday's rate).
-            Drag the slider's ends to zoom into a stretch of time; the scale refits so the gap shows more.
+            {t("Axis in millions of won. Global bitcoin (BTC-USD) converted to KRW at each day's USD/KRW rate (weekends use Friday's rate).")}
+            {' '}{t("Drag the slider's ends to zoom into a stretch of time; the scale refits so the gap shows more.")}
           </div>
 
           {premiumData.length > 0 && (
             <>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginTop: 16 }}>
-                <h3 style={{ margin: 0 }}>Korean Premium</h3>
+                <h3 style={{ margin: 0 }}>{t('Korean Premium')}</h3>
                 <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
-                  average over {win ? `${shown[0]?.date} – ${shown[shown.length - 1]?.date}` : 'the period'} <span className={tone(avgPremium)}>{fmtPct(avgPremium)}</span>
+                  {t('average over {range}', { range: win ? `${shown[0]?.date} – ${shown[shown.length - 1]?.date}` : t('the period') })} <span className={tone(avgPremium)}>{fmtPct(avgPremium)}</span>
                 </span>
               </div>
               <div style={{ width: '100%', height: 220, marginTop: 8 }}>
@@ -279,7 +280,7 @@ export default function BitcoinPanel({ reloadKey = 0 }) {
                     <YAxis stroke="#9aa0a6" fontSize={11} domain={premiumAxis.domain} ticks={premiumAxis.ticks} allowDataOverflow tickFormatter={v => fmtPct(v, 1)} width={64} />
                     <Tooltip
                       contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }}
-                      formatter={v => [fmtPct(v), 'Upbit over global']}
+                      formatter={v => [fmtPct(v), t('Upbit over global')]}
                     />
                     <ReferenceLine y={0} stroke="#9aa0a6" />
                     <Line type="monotone" dataKey="premium" stroke={UPBIT_COLOR} dot={false} strokeWidth={1.5} isAnimationActive={false} />
@@ -287,8 +288,8 @@ export default function BitcoinPanel({ reloadKey = 0 }) {
                 </ResponsiveContainer>
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
-                Both daily prices close at 09:00 KST (00:00 UTC), so each day compares like with like; the rate is the day's USD/KRW close.
-                {premiumAxis.clipped > 0 && ` ${premiumAxis.clipped} unusual ${premiumAxis.clipped === 1 ? 'day runs' : 'days run'} off the scale; hover for the value.`}
+                {t("Both daily prices close at 09:00 KST (00:00 UTC), so each day compares like with like; the rate is the day's USD/KRW close.")}
+                {premiumAxis.clipped > 0 && ` ${t(premiumAxis.clipped === 1 ? '{n} unusual day runs off the scale; hover for the value.' : '{n} unusual days run off the scale; hover for the value.', { n: premiumAxis.clipped })}`}
               </div>
             </>
           )}
@@ -311,7 +312,7 @@ function AvgBlock({ avgs, current }) {
         const diff = v && current != null ? current / v - 1 : null;
         return (
           <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
-            <span style={{ color: 'var(--text-dim)' }}>{label}</span>
+            <span style={{ color: 'var(--text-dim)' }}>{t(label)}</span>
             <span>
               {fmtNum(v, 0)} <span style={{ color: 'var(--text-dim)', fontSize: 10 }}>KRW</span>
               {diff != null && <span className={tone(diff)} style={{ marginLeft: 6 }}>{diff > 0 ? '+' : ''}{fmtPct(diff)}</span>}

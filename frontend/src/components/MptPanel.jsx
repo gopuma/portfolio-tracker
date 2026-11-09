@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { t } from '../i18n.jsx';
 
 function fmtPct(n, d = 1) {
   if (n == null || isNaN(n)) return '–';
@@ -39,13 +40,13 @@ export default function MptPanel({ symbols, currentWeights, title = 'Optimal Por
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setErr(null);
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       api.optimize(uniq, days, rf)
         .then(res => { if (!cancelled) setData(res); })
         .catch(e => { if (!cancelled) { setErr(e.message); setData(null); } })
         .finally(() => { if (!cancelled) setLoading(false); });
     }, 200);
-    return () => { cancelled = true; clearTimeout(t); };
+    return () => { cancelled = true; clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symKey, days, rf]);
 
@@ -54,23 +55,23 @@ export default function MptPanel({ symbols, currentWeights, title = 'Optimal Por
   return (
     <div className="panel" style={{ marginTop: 12, marginBottom: 4, background: 'var(--panel-2)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <h3 style={{ margin: 0 }}>{title}</h3>
+        <h3 style={{ margin: 0 }}>{t(title)}</h3>
         {/* Stays right-aligned when the row wraps under the heading. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginLeft: 'auto', justifyContent: 'flex-end' }}>
           {PRESETS.map(p => (
-            <button key={p.label} className={`btn ${days === p.days ? '' : 'ghost'}`} onClick={() => setDays(p.days)}>{p.label}</button>
+            <button key={p.label} className={`btn ${days === p.days ? '' : 'ghost'}`} onClick={() => setDays(p.days)}>{t(p.label)}</button>
           ))}
-          <span style={{ fontSize: 12, color: 'var(--text-dim)', marginLeft: 6 }}>Risk-free</span>
+          <span style={{ fontSize: 12, color: 'var(--text-dim)', marginLeft: 6 }}>{t('Risk-free')}</span>
           <input type="number" step={0.5} min={0} max={20} value={(rf * 100).toString()}
             onChange={e => setRf(Math.max(0, Number(e.target.value) / 100))}
             style={inputStyle} />
           <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>%</span>
-          <button className="btn ghost" onClick={onClose} style={{ color: 'var(--red)', borderColor: 'var(--red)', fontWeight: 600 }}>✕ Close</button>
+          <button className="btn ghost" onClick={onClose} style={{ color: 'var(--red)', borderColor: 'var(--red)', fontWeight: 600 }}>{t('✕ Close')}</button>
         </div>
       </div>
 
       {loading ? (
-        <div className="loading">Optimizing…</div>
+        <div className="loading">{t('Optimizing…')}</div>
       ) : err ? (
         <div className="error" style={{ marginTop: 10 }}>{err}</div>
       ) : data?.error ? (
@@ -78,20 +79,20 @@ export default function MptPanel({ symbols, currentWeights, title = 'Optimal Por
       ) : !data ? null : (
         <>
           <div className="grid-3" style={{ marginTop: 14 }}>
-            <PortfolioStat label="★ Max Sharpe (optimal)" p={data.max_sharpe} highlight />
-            <PortfolioStat label="Min Variance" p={data.min_variance} />
-            <PortfolioStat label="Equal Weight" p={data.equal_weight} />
+            <PortfolioStat label={t('★ Max Sharpe (optimal)')} p={data.max_sharpe} highlight />
+            <PortfolioStat label={t('Min Variance')} p={data.min_variance} />
+            <PortfolioStat label={t('Equal Weight')} p={data.equal_weight} />
           </div>
 
           <div style={{ overflowX: 'auto', marginTop: 16 }}>
             <table>
               <thead>
                 <tr>
-                  <th>Symbol</th>
-                  <th className="num">Exp. Return</th>
-                  <th className="num">Volatility</th>
-                  {currentWeights && <th className="num">Current</th>}
-                  <th className="num">Suggested</th>
+                  <th>{t('Symbol')}</th>
+                  <th className="num">{t('Exp. Return')}</th>
+                  <th className="num">{t('Volatility')}</th>
+                  {currentWeights && <th className="num">{t('Current')}</th>}
+                  <th className="num">{t('Suggested')}</th>
                   {currentWeights && <th className="num">Δ</th>}
                 </tr>
               </thead>
@@ -114,9 +115,9 @@ export default function MptPanel({ symbols, currentWeights, title = 'Optimal Por
           </div>
 
           <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 12, marginBottom: 0, lineHeight: 1.6 }}>
-            Long-only weights maximizing the Sharpe ratio over {data.n_obs} overlapping days
-            ({data.from_date} → {data.to_date}){data.skipped?.length ? `, excluding ${data.skipped.join(', ')} (insufficient history)` : ''}.
-            Optimized from historical returns/covariance — a starting point, not advice.
+            {t('Long-only weights maximizing the Sharpe ratio over {n} overlapping days ({from} → {to})', { n: data.n_obs, from: data.from_date, to: data.to_date })}
+            {data.skipped?.length ? t(', excluding {syms} (insufficient history)', { syms: data.skipped.join(', ') }) : ''}.
+            {' '}{t('Optimized from historical returns/covariance — a starting point, not advice.')}
           </p>
         </>
       )}
@@ -129,9 +130,9 @@ function PortfolioStat({ label, p, highlight }) {
     <div className="panel" style={highlight ? { borderColor: 'var(--accent)' } : undefined}>
       <div className="metric-label">{label}</div>
       <div style={{ fontSize: 13, marginTop: 6, lineHeight: 1.7 }}>
-        <div>Return: <strong className={p.exp_return >= 0 ? 'up' : 'down'}>{fmtPct(p.exp_return)}</strong></div>
-        <div>Volatility: <strong>{fmtPct(p.vol)}</strong></div>
-        <div>Sharpe: <strong>{fmtRatio(p.sharpe)}</strong></div>
+        <div>{t('Return')}: <strong className={p.exp_return >= 0 ? 'up' : 'down'}>{fmtPct(p.exp_return)}</strong></div>
+        <div>{t('Volatility')}: <strong>{fmtPct(p.vol)}</strong></div>
+        <div>{t('Sharpe')}: <strong>{fmtRatio(p.sharpe)}</strong></div>
       </div>
     </div>
   );
