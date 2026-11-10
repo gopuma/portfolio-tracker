@@ -121,3 +121,22 @@ tr:hover td { background: var(--panel-2); }
 /* Nav and the language toggle, together at the right of the header. */
 .header-right { display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap; }
 .header .lang-toggle { padding: 4px 10px; font-size: 13px; }
+
+/* US market hours (MarketHoursCard): one status line over a thin 24-hour bar of a Seoul day. */
+.panel.mh { padding: 12px 20px 8px; }
+.mh-row { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; font-size: 13px; }
+.mh-status { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.mh-dot { width: 7px; height: 7px; border-radius: 50%; align-self: center; }
+.mh-dim { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.mh-clocks { margin-left: auto; display: inline-flex; gap: 14px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.mh-clocks b { color: var(--text); font-weight: 600; }
+.mh-timeline { position: relative; margin-top: 10px; }
+.mh-track { position: relative; height: 4px; background: var(--panel-2); border-radius: 2px; overflow: hidden; }
+.mh-band { position: absolute; top: 0; bottom: 0; }
+.mh-band.regular { background: var(--green); opacity: .75; }
+.mh-band.pre, .mh-band.post { background: var(--amber); opacity: .35; }
+.mh-now { position: absolute; top: -3px; width: 2px; height: 10px; margin-left: -1px; background: var(--text); border-radius: 1px; }
+.mh-ticks { position: relative; height: 14px; margin-top: 3px; font-size: 10px; color: var(--text-dim); opacity: .7; font-variant-numeric: tabular-nums; }
+.mh-ticks span { position: absolute; transform: translateX(-50%); }
+.mh-ticks span:first-child { transform: none; }
+.mh-ticks span:last-child { transform: translateX(-100%); }

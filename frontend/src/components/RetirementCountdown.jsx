@@ -94,7 +94,7 @@ export default function RetirementCountdown({ target = RETIREMENT, label = 'Reti
       </div>
 
       {!past && !today && (
-        <div style={{ textAlign: 'right' }}>
+        <div style={{ textAlign: 'right', marginLeft: 'auto' }}>
           <div className="metric-label">{t('Days remaining')}</div>
           <div className="metric" style={{ fontSize: 26, fontVariantNumeric: 'tabular-nums' }}>
             {days.toLocaleString()}
