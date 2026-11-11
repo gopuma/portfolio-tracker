@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { t, locale } from '../i18n.jsx';
 
 /**
  * D-Day countdown to the retirement date.
@@ -47,7 +48,7 @@ function breakdown(target, now = new Date()) {
 }
 
 const fmtDate = ({ year, month, day }) =>
-  new Date(year, month - 1, day).toLocaleDateString(undefined, {
+  new Date(year, month - 1, day).toLocaleDateString(locale(), {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
   });
 
@@ -55,8 +56,8 @@ export default function RetirementCountdown({ target = RETIREMENT, label = 'Reti
   // Re-render exactly at local midnight so the number is never stale on a page left open.
   const [, tick] = useState(0);
   useEffect(() => {
-    const t = setTimeout(() => tick(n => n + 1), msToMidnight() + 1000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => tick(n => n + 1), msToMidnight() + 1000);
+    return () => clearTimeout(timer);
   });
 
   const days = daysUntil(target);
@@ -68,15 +69,15 @@ export default function RetirementCountdown({ target = RETIREMENT, label = 'Reti
   const dday = today ? 'D-Day' : past ? `D+${Math.abs(days)}` : `D-${days}`;
 
   const parts = [
-    y > 0 && `${y} year${y === 1 ? '' : 's'}`,
-    m > 0 && `${m} month${m === 1 ? '' : 's'}`,
-    d > 0 && `${d} day${d === 1 ? '' : 's'}`,
+    y > 0 && t(y === 1 ? '{n} year' : '{n} years', { n: y }),
+    m > 0 && t(m === 1 ? '{n} month' : '{n} months', { n: m }),
+    d > 0 && t(d === 1 ? '{n} day' : '{n} days', { n: d }),
   ].filter(Boolean);
 
   return (
     <div className="panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
       <div>
-        <div className="metric-label">{label}</div>
+        <div className="metric-label">{t(label)}</div>
         <div
           className="metric"
           style={{ fontSize: 40, letterSpacing: '-0.02em', color: today ? 'var(--green)' : 'var(--accent)', lineHeight: 1.1 }}
@@ -85,21 +86,21 @@ export default function RetirementCountdown({ target = RETIREMENT, label = 'Reti
         </div>
         <div style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 4 }}>
           {today
-            ? 'Today is the day.'
+            ? t('Today is the day.')
             : past
-              ? `Retired since ${fmtDate(target)}.`
-              : `${parts.join(', ')} to go · ${fmtDate(target)}`}
+              ? t('Retired since {date}.', { date: fmtDate(target) })
+              : t('{left} to go · {date}', { left: parts.join(', '), date: fmtDate(target) })}
         </div>
       </div>
 
       {!past && !today && (
-        <div style={{ textAlign: 'right' }}>
-          <div className="metric-label">Days remaining</div>
+        <div style={{ textAlign: 'right', marginLeft: 'auto' }}>
+          <div className="metric-label">{t('Days remaining')}</div>
           <div className="metric" style={{ fontSize: 26, fontVariantNumeric: 'tabular-nums' }}>
             {days.toLocaleString()}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
-            ≈ {Math.round(days / 7).toLocaleString()} weeks · {countWeekdays(target).toLocaleString()} working days
+            ≈ {t('{w} weeks · {d} working days', { w: Math.round(days / 7).toLocaleString(), d: countWeekdays(target).toLocaleString() })}
           </div>
         </div>
       )}

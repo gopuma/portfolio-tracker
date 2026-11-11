@@ -4,6 +4,6 @@ CREATE TABLE IF NOT EXISTS job_runs (
   name             VARCHAR(64) PRIMARY KEY,
   last_started_at  DATETIME NULL COMMENT 'UTC',
   last_finished_at DATETIME NULL COMMENT 'UTC',
-  last_reason      VARCHAR(16) NULL COMMENT 'scheduled | catch-up',
+  last_reason      VARCHAR(16) NULL COMMENT 'scheduled | catch-up | startup | <N>d (manual)',
   updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

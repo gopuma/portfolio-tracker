@@ -6,6 +6,7 @@ import {
 import { api } from '../api.js';
 import { historyStats, combineHistory, MIN_PATHS } from '../projection/simulate.js';
 import { DIM, ACCENT, BASELINE, tooltipStyle, inputStyle, dimLabel, chipStyle, fmtMoney, fmtCompact } from './stressShared.jsx';
+import { t, isKo } from '../i18n.jsx';
 
 const PATH_OPTIONS = [MIN_PATHS, 25000, 50000, 100000];
 const MODELS = [
@@ -19,7 +20,7 @@ const STRATEGIES = [
 
 // Starting assumptions, in won (the page opens in KRW).
 const DEFAULTS = {
-  other: 400_000_000,       // assets outside the tracked portfolios
+  other: 550_000_000,       // assets outside the tracked portfolios
   spending: 54_000_000,     // ₩4.5M a month, today's money
   income: 40_000_000,       // National Pension, today's money
   incomeStart: '15',        // years from now
@@ -76,7 +77,7 @@ function PctInput({ value, onChange, step = 0.1, min = -50, max = 100 }) {
 function Field({ label, hint, children }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span style={dimLabel} title={hint}>{label}</span>
+      <span style={dimLabel} title={hint ? t(hint) : undefined}>{t(label)}</span>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>{children}</div>
     </div>
   );
@@ -84,7 +85,7 @@ function Field({ label, hint, children }) {
 
 function Metric({ label, value, sub, title }) {
   return (
-    <div className="panel" style={{ marginBottom: 0 }} title={title}>
+    <div className="panel" style={{ marginBottom: 0 }} title={title ? t(title) : undefined}>
       <div className="metric-label">{label}</div>
       <div className="metric" style={{ marginTop: 6 }}>{value}</div>
       {sub && <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 4 }}>{sub}</div>}
@@ -102,13 +103,13 @@ function FanTip({ active, payload, ccy }) {
   );
   return (
     <div style={{ ...tooltipStyle, padding: '8px 10px', borderRadius: 6, minWidth: 220 }}>
-      <div style={{ fontWeight: 600, marginBottom: 4 }}>Year {d.year}</div>
-      {row('Good (1 in 20)', d.p95)}
-      {row('75th percentile', d.p75)}
-      {row('Median', d.p50, true)}
-      {row('25th percentile', d.p25)}
-      {row('Bad (1 in 20)', d.p5)}
-      {d.out > 0 && <div style={{ color: 'var(--amber)', marginTop: 4 }}>Run out by now: {fmtPctPlain(d.out)}</div>}
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>{t('Year {n}', { n: d.year })}</div>
+      {row(t('Good (1 in 20)'), d.p95)}
+      {row(t('75th percentile'), d.p75)}
+      {row(t('Median'), d.p50, true)}
+      {row(t('25th percentile'), d.p25)}
+      {row(t('Bad (1 in 20)'), d.p5)}
+      {d.out > 0 && <div style={{ color: 'var(--amber)', marginTop: 4 }}>{t('Run out by now')}: {fmtPctPlain(d.out)}</div>}
     </div>
   );
 }
@@ -254,21 +255,21 @@ export default function Projection() {
 
   const end = result ? result[bandsKey][result.years] : null;
   const endReal = result ? result.real[result.years] : null;
-  const perMonth = v => `${fmtCompact(v / 12, ccy)} / month`;
+  const perMonth = v => t('{v} / month', { v: fmtCompact(v / 12, ccy) });
   const netDraw = spending != null ? spending - income : 0;
 
   return (
     <div>
       {err && <div className="error" style={{ marginBottom: 16 }}>{err}</div>}
       {!data ? (
-        !err && <div className="panel"><div className="loading">Loading your portfolios and their history since 2000…</div></div>
+        !err && <div className="panel"><div className="loading">{t('Loading your portfolios and their history since 2000…')}</div></div>
       ) : (
         <>
           <div className="panel">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 12 }}>
-              <h2 style={{ margin: 0 }}>Portfolio projection</h2>
+              <h2 style={{ margin: 0 }}>{t('Retirement Simulator')}</h2>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={dimLabel}>Show in</span>
+                <span style={dimLabel}>{t('Show in')}</span>
                 {['KRW', 'USD'].map(c => (
                   <button key={c} className={`btn ${ccy === c ? '' : 'ghost'}`} onClick={() => setCcy(c)}>{c}</button>
                 ))}
@@ -276,7 +277,7 @@ export default function Projection() {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 14 }}>
-              <span style={{ ...dimLabel, marginRight: 4 }}>Portfolios</span>
+              <span style={{ ...dimLabel, marginRight: 4 }}>{t('Portfolios')}</span>
               {data.portfolios.map(p => {
                 const on = selected?.has(p.id);
                 return (
@@ -294,7 +295,7 @@ export default function Projection() {
               </Field>
               <Field label="Return on other assets (per year)" hint="A steady return, before inflation, with no ups and downs (deposits, bonds held to maturity)">
                 <PctInput value={otherRate} onChange={setOtherRate} min={-10} max={30} />
-                {other > 0 && <span style={dimLabel}>{fmtPctPlain(otherShare)} of the balance</span>}
+                {other > 0 && <span style={dimLabel}>{t('{pct} of the balance', { pct: fmtPctPlain(otherShare) })}</span>}
               </Field>
               <Field label="Starting balance">
                 <span style={{ fontSize: 18, fontWeight: 600 }}>{fmtMoney(start, ccy)}</span>
@@ -312,11 +313,11 @@ export default function Projection() {
           </div>
 
           <div className="panel">
-            <h2>Assumptions</h2>
+            <h2>{t('Assumptions')}</h2>
             <div className="grid-3" style={{ alignItems: 'start' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <Field label={cashShare > 0 ? 'Rate of return on investments (average per year)' : 'Rate of return (average per year)'}
-                  hint={`Expected annual return before inflation, in ${ccy}${cashShare > 0 ? `, for everything except ${ccy} cash` : ''}`}>
+                  hint={cashShare > 0 ? t('Expected annual return before inflation, in {ccy}, for everything except {ccy} cash', { ccy }) : t('Expected annual return before inflation, in {ccy}', { ccy })}>
                   <PctInput value={mean} onChange={v => { setMeanFollows(false); setMean(v); }} />
                 </Field>
                 <Field label="Volatility (per year)" hint="Standard deviation of annual returns of the investments">
@@ -324,32 +325,32 @@ export default function Projection() {
                 </Field>
                 {hist && (
                   <div style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.5 }}>
-                    History of {cashShare > 0 ? 'these investments' : "today's mix"}, {data.months[0]?.slice(0, 4)}–{data.history_to?.slice(0, 4)}:{' '}
-                    {fmtPctPlain(hist.mean)} average ({fmtPctPlain(hist.compound)} compound), {fmtPctPlain(hist.vol)} volatility.
-                    {' '}Default: cash's rate + {DEFAULTS.sharpe} × volatility, a cautious long-run reward for risk, since that period favoured these holdings.{' '}
+                    {t('History of {what}, {from}–{to}:', { what: cashShare > 0 ? t('these investments') : t("today's mix"), from: data.months[0]?.slice(0, 4), to: data.history_to?.slice(0, 4) })}{' '}
+                    {t('{mean} average ({compound} compound), {vol} volatility.', { mean: fmtPctPlain(hist.mean), compound: fmtPctPlain(hist.compound), vol: fmtPctPlain(hist.vol) })}
+                    {' '}{t("Default: cash's rate + {k} × volatility, a cautious long-run reward for risk, since that period favoured these holdings.", { k: DEFAULTS.sharpe })}{' '}
                     <span style={{ display: 'inline-flex', gap: 6, marginTop: 4 }}>
-                      <button className="btn ghost" style={{ ...chipStyle, padding: '1px 8px' }} onClick={useDefaults}>Default ({defaultMean}%)</button>
+                      <button className="btn ghost" style={{ ...chipStyle, padding: '1px 8px' }} onClick={useDefaults}>{t('Default ({v}%)', { v: defaultMean })}</button>
                       <button className="btn ghost" style={{ ...chipStyle, padding: '1px 8px' }}
-                        onClick={() => { setMeanFollows(false); setMean((hist.mean * 100).toFixed(1)); setVol((hist.vol * 100).toFixed(1)); }}>History ({(hist.mean * 100).toFixed(1)}%)</button>
+                        onClick={() => { setMeanFollows(false); setMean((hist.mean * 100).toFixed(1)); setVol((hist.vol * 100).toFixed(1)); }}>{t('History ({v}%)', { v: (hist.mean * 100).toFixed(1) })}</button>
                     </span>
                   </div>
                 )}
                 {cashShare > 0 && (
-                  <Field label={`${ccy} cash earns (above inflation)`} hint="Savings-account rate over inflation; cash keeps pace with each path's inflation plus this">
+                  <Field label={t('{ccy} cash earns (above inflation)', { ccy })} hint="Savings-account rate over inflation; cash keeps pace with each path's inflation plus this">
                     <PctInput value={cashSpread} onChange={setCashSpread} min={-5} max={10} />
-                    <span style={dimLabel}>{fmtPctPlain(cashShare)} of the balance · {fmtPctPlain(cashRate)} a year</span>
+                    <span style={dimLabel}>{t('{pct} of the balance', { pct: fmtPctPlain(cashShare) })} · {t('{pct} a year', { pct: fmtPctPlain(cashRate) })}</span>
                   </Field>
                 )}
                 {(cashShare > 0 || other > 0) && mean !== '' && (
                   <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
-                    Investments {fmtPctPlain(investedShare)} · cash {fmtPctPlain(cashShare)} · other {fmtPctPlain(otherShare)}.
-                    {' '}Whole balance: about <span style={{ color: 'var(--text)', fontWeight: 600 }}>{fmtPctPlain(blended)}</span> a year on average
-                    ({fmtPctPlain((1 + blended) / (1 + num(inflation) / 100) - 1)} above inflation).
+                    {t('Investments {a} · cash {b} · other {c}.', { a: fmtPctPlain(investedShare), b: fmtPctPlain(cashShare), c: fmtPctPlain(otherShare) })}
+                    {' '}{t('Whole balance: about')} <span style={{ color: 'var(--text)', fontWeight: 600 }}>{fmtPctPlain(blended)}</span> {t('a year on average')}
+                    {' '}({t('{pct} above inflation', { pct: fmtPctPlain((1 + blended) / (1 + num(inflation) / 100) - 1) })}).
                   </div>
                 )}
                 <Field label="Return model">
                   {MODELS.map(m => (
-                    <button key={m.key} className={`btn ${model === m.key ? '' : 'ghost'}`} style={chipStyle} title={m.hint} onClick={() => setModel(m.key)}>{m.label}</button>
+                    <button key={m.key} className={`btn ${model === m.key ? '' : 'ghost'}`} style={chipStyle} title={t(m.hint)} onClick={() => setModel(m.key)}>{t(m.label)}</button>
                   ))}
                 </Field>
               </div>
@@ -366,14 +367,14 @@ export default function Projection() {
                 </Field>
                 <Field label="Income starts after">
                   <input type="number" min={0} max={60} value={incomeStart} onChange={e => setIncomeStart(e.target.value)} style={inputStyle} />
-                  <span style={dimLabel}>years{income > 0 ? ` · ${perMonth(income)}` : ''}</span>
+                  <span style={dimLabel}>{t('years')}{income > 0 ? ` · ${perMonth(income)}` : ''}</span>
                 </Field>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <Field label="Spending rule">
                   {STRATEGIES.map(s => (
-                    <button key={s.key} className={`btn ${strategy === s.key ? '' : 'ghost'}`} style={chipStyle} title={s.hint} onClick={() => setStrategy(s.key)}>{s.label}</button>
+                    <button key={s.key} className={`btn ${strategy === s.key ? '' : 'ghost'}`} style={chipStyle} title={t(s.hint)} onClick={() => setStrategy(s.key)}>{t(s.label)}</button>
                   ))}
                 </Field>
                 <Field label={strategy === 'fixed' ? 'Inflation-adjusted spending per year (today\'s money)' : 'First-year spending'}>
@@ -386,7 +387,9 @@ export default function Projection() {
                 </Field>
                 {strategy === 'fixed' && income > 0 && (
                   <div style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.5 }}>
-                    Once income starts, the portfolio pays {netDraw > 0 ? `${fmtCompact(netDraw, ccy)} a year (${fmtPctPlain(start > 0 ? netDraw / start : 0, 2)} of today's balance)` : 'nothing; income covers spending'}.
+                    {netDraw > 0
+                      ? t("Once income starts, the portfolio pays {v} a year ({pct} of today's balance).", { v: fmtCompact(netDraw, ccy), pct: fmtPctPlain(start > 0 ? netDraw / start : 0, 2) })
+                      : t('Once income starts, the portfolio pays nothing; income covers spending.')}
                   </div>
                 )}
               </div>
@@ -395,38 +398,38 @@ export default function Projection() {
 
           {simErr && <div className="error" style={{ marginBottom: 16 }}>{simErr}</div>}
           {chosen.length === 0 && other <= 0 ? (
-            <div className="panel"><div className="loading">Pick a portfolio or enter other assets to project.</div></div>
+            <div className="panel"><div className="loading">{t('Pick a portfolio or enter other assets to project.')}</div></div>
           ) : !result ? (
-            <div className="panel"><div className="loading">Simulating {paths.toLocaleString()} paths…</div></div>
+            <div className="panel"><div className="loading">{t('Simulating {n} paths…', { n: paths.toLocaleString() })}</div></div>
           ) : (
             <div style={{ opacity: running ? 0.6 : 1, transition: 'opacity .15s' }}>
               <div className="grid-5" style={{ marginBottom: 16 }}>
                 {result.strategy === 'fixed' ? (
-                  <Metric label={`Lasts ${result.years} years`} value={fmtPctPlain(result.success)}
-                    sub={result.firstRunOut ? `${result.firstRunOut.count.toLocaleString()} of ${result.paths.toLocaleString()} paths run out, typically in year ${Math.ceil(result.firstRunOut.p50)}` : 'No path ran out'}
+                  <Metric label={t('Lasts {n} years', { n: result.years })} value={fmtPctPlain(result.success)}
+                    sub={result.firstRunOut ? t('{n} of {total} paths run out, typically in year {y}', { n: result.firstRunOut.count.toLocaleString(), total: result.paths.toLocaleString(), y: Math.ceil(result.firstRunOut.p50) }) : t('No path ran out')}
                     title="Share of paths that never run out of money" />
                 ) : (
-                  <Metric label={`Spending in year ${result.years}`} value={fmtCompact(result.spending[result.years - 1].p50, ccy)}
-                    sub={`Bad case ${fmtCompact(result.spending[result.years - 1].p5, ccy)} a year, today's money`}
+                  <Metric label={t('Spending in year {n}', { n: result.years })} value={fmtCompact(result.spending[result.years - 1].p50, ccy)}
+                    sub={t("Bad case {v} a year, today's money", { v: fmtCompact(result.spending[result.years - 1].p5, ccy) })}
                     title="Median yearly spending in the final year under the percent rule, in today's money" />
                 )}
-                <Metric label="Keeps today's value" value={fmtPctPlain(result.keepStart)}
-                  sub={`Ends above ${fmtCompact(start, ccy)} in today's money`} />
-                <Metric label={`Median, year ${result.years}`} value={fmtCompact(endReal.p50, ccy)} sub="Today's money" />
-                <Metric label={`Bad case, year ${result.years}`} value={fmtCompact(endReal.p5, ccy)} sub="1 in 20 ends lower · today's money" />
-                <Metric label="Most you could spend" value={fmtCompact(result.safeSpending.lasts90, ccy)}
-                  sub={`a year (${perMonth(result.safeSpending.lasts90)}) and still last ${result.years} years in 9 of 10 paths`}
+                <Metric label={t("Keeps today's value")} value={fmtPctPlain(result.keepStart)}
+                  sub={t("Ends above {v} in today's money", { v: fmtCompact(start, ccy) })} />
+                <Metric label={t('Median, year {n}', { n: result.years })} value={fmtCompact(endReal.p50, ccy)} sub={t("Today's money")} />
+                <Metric label={t('Bad case, year {n}', { n: result.years })} value={fmtCompact(endReal.p5, ccy)} sub={t("1 in 20 ends lower · today's money")} />
+                <Metric label={t('Most you could spend')} value={fmtCompact(result.safeSpending.lasts90, ccy)}
+                  sub={t('a year ({pm}) and still last {n} years in 9 of 10 paths', { pm: perMonth(result.safeSpending.lasts90), n: result.years })}
                   title="Highest fixed inflation-adjusted spending at which 90% of paths never run out, with the same income" />
               </div>
 
               <div className="panel">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 12 }}>
-                  <h2 style={{ margin: 0 }}>Balance over time</h2>
+                  <h2 style={{ margin: 0 }}>{t('Balance over time')}</h2>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span style={{ ...dimLabel, fontSize: 11 }}>{result.paths.toLocaleString()} paths · {(result.ms / 1000).toFixed(1)}s</span>
-                    <button className="btn ghost" style={chipStyle} title="Run again with new random numbers" onClick={() => setSeed(s => s + 1)}>Re-run</button>
+                    <span style={{ ...dimLabel, fontSize: 11 }}>{t('{n} paths', { n: result.paths.toLocaleString() })} · {(result.ms / 1000).toFixed(1)}s</span>
+                    <button className="btn ghost" style={chipStyle} title={t('Run again with new random numbers')} onClick={() => setSeed(s => s + 1)}>{t('Re-run')}</button>
                     {[['real', "Today's money"], ['nominal', 'Future money']].map(([k, label]) => (
-                      <button key={k} className={`btn ${view === k ? '' : 'ghost'}`} style={chipStyle} onClick={() => setView(k)}>{label}</button>
+                      <button key={k} className={`btn ${view === k ? '' : 'ghost'}`} style={chipStyle} onClick={() => setView(k)}>{t(label)}</button>
                     ))}
                   </div>
                 </div>
@@ -434,19 +437,19 @@ export default function Projection() {
                   <ResponsiveContainer>
                     <ComposedChart data={chartRows} margin={{ top: 8, right: 16, left: 10, bottom: 4 }}>
                       <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
-                      <XAxis dataKey="year" stroke={DIM} fontSize={11} tickFormatter={y => `${y}y`} />
+                      <XAxis dataKey="year" stroke={DIM} fontSize={11} tickFormatter={y => t('{n}y', { n: y })} />
                       <YAxis stroke={DIM} fontSize={11} width={70} tickFormatter={v => fmtCompact(v, ccy)} />
                       <Tooltip content={<FanTip ccy={ccy} />} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
-                      <ReferenceLine y={start} stroke={BASELINE} strokeDasharray="4 4" label={{ value: 'Start', fill: DIM, fontSize: 11, position: 'insideTopLeft' }} />
+                      <ReferenceLine y={start} stroke={BASELINE} strokeDasharray="4 4" label={{ value: t('Start'), fill: DIM, fontSize: 11, position: 'insideTopLeft' }} />
                       {income > 0 && num(incomeStart) > 0 && num(incomeStart) < result.years && (
                         <ReferenceLine x={Math.round(num(incomeStart))} stroke={BASELINE} strokeDasharray="2 4"
-                          label={{ value: 'Income starts', fill: DIM, fontSize: 11, position: 'insideTopRight' }} />
+                          label={{ value: t('Income starts'), fill: DIM, fontSize: 11, position: 'insideTopRight' }} />
                       )}
-                      <Area dataKey="outer" name="5–95% of paths" stroke="none" fill={ACCENT} fillOpacity={0.14} isAnimationActive={false} />
-                      <Area dataKey="inner" name="25–75%" stroke="none" fill={ACCENT} fillOpacity={0.28} isAnimationActive={false} />
-                      <Line dataKey="p50" name="Median" stroke={ACCENT} strokeWidth={2} dot={false} isAnimationActive={false} />
-                      <Line dataKey="p5" name="Bad case (1 in 20)" stroke={BASELINE} strokeWidth={1.5} strokeDasharray="5 3" dot={false} isAnimationActive={false} />
+                      <Area dataKey="outer" name={t('5–95% of paths')} stroke="none" fill={ACCENT} fillOpacity={0.14} isAnimationActive={false} />
+                      <Area dataKey="inner" name={t('25–75%')} stroke="none" fill={ACCENT} fillOpacity={0.28} isAnimationActive={false} />
+                      <Line dataKey="p50" name={t('Median')} stroke={ACCENT} strokeWidth={2} dot={false} isAnimationActive={false} />
+                      <Line dataKey="p5" name={t('Bad case (1 in 20)')} stroke={BASELINE} strokeWidth={1.5} strokeDasharray="5 3" dot={false} isAnimationActive={false} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
@@ -454,15 +457,15 @@ export default function Projection() {
                 <table style={{ marginTop: 12 }}>
                   <thead>
                     <tr>
-                      <th>Year</th>
-                      <th className="num" title="5th percentile: 1 path in 20 ends lower">Bad (1 in 20)</th>
-                      <th className="num">25th</th>
-                      <th className="num">Median</th>
-                      <th className="num">75th</th>
-                      <th className="num" title="95th percentile: 1 path in 20 ends higher">Good (1 in 20)</th>
+                      <th>{t('Year')}</th>
+                      <th className="num" title={t('5th percentile: 1 path in 20 ends lower')}>{t('Bad (1 in 20)')}</th>
+                      <th className="num">{t('25th')}</th>
+                      <th className="num">{t('Median')}</th>
+                      <th className="num">{t('75th')}</th>
+                      <th className="num" title={t('95th percentile: 1 path in 20 ends higher')}>{t('Good (1 in 20)')}</th>
                       {result.strategy === 'percent'
-                        ? <th className="num" title="Median spending that year, in today's money">Spending (median)</th>
-                        : <th className="num">Run out by then</th>}
+                        ? <th className="num" title={t("Median spending that year, in today's money")}>{t('Spending (median)')}</th>
+                        : <th className="num">{t('Run out by then')}</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -486,14 +489,29 @@ export default function Projection() {
                 </table>
 
                 <p style={{ margin: '14px 0 0', fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6 }}>
-                  Keep {fmtCompact(start, ccy)} in today's money with 90% confidence: spend up to {fmtCompact(result.safeSpending.keeps90, ccy)} a year
-                  ({perMonth(result.safeSpending.keeps90)}); with 75%: {fmtCompact(result.safeSpending.keeps75, ccy)} a year.
-                  {' '}Lasting {result.years} years with 95% confidence: up to {fmtCompact(result.safeSpending.lasts95, ccy)} a year.
-                  {view === 'nominal' && end && <> Future money at year {result.years} includes inflation; the median path's prices are about {(endReal.p50 > 0 ? end.p50 / endReal.p50 : 0).toFixed(2)}× today's.</>}
+                  {t("Keep {start} in today's money with 90% confidence: spend up to {k90} a year ({pm}); with 75%: {k75} a year.", { start: fmtCompact(start, ccy), k90: fmtCompact(result.safeSpending.keeps90, ccy), pm: perMonth(result.safeSpending.keeps90), k75: fmtCompact(result.safeSpending.keeps75, ccy) })}
+                  {' '}{t('Lasting {n} years with 95% confidence: up to {v} a year.', { n: result.years, v: fmtCompact(result.safeSpending.lasts95, ccy) })}
+                  {view === 'nominal' && end && <> {t("Future money at year {n} includes inflation; the median path's prices are about {x}× today's.", { n: result.years, x: (endReal.p50 > 0 ? end.p50 / endReal.p50 : 0).toFixed(2) })}</>}
                 </p>
               </div>
 
               <div className="panel" style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6 }}>
+                {isKo() ? (
+                  <>
+                    <strong style={{ color: 'var(--text)' }}>작동 방식.</strong> {result.paths.toLocaleString()}개의 경로 각각이 월 단위로 진행됩니다:
+                    지출을 인출하고(그 경로의 누적 인플레이션만큼 인상), 소득이 시작되면 더한 뒤, 잔액이 무작위 수익을 얻습니다.
+                    {model === 'historical'
+                      ? <> 수익률은 현재 보유 종목이 {data.months[0]} 이후 거두었을 성과(<Link to="/stress">과거 재현</Link>처럼 각 종목이 현재 베타로 대용 지수를 따라감)에서 12개월 단위 블록을 무작위로 뽑아, 위의 수익률과 변동성에 맞게 조정한 것입니다.</>
+                      : <> 수익률은 위의 수익률과 변동성을 갖는 서로 독립인 로그정규 분포입니다.</>}
+                    {cashShare > 0 && <> {ccy} 현금(잔액의 {fmtPctPlain(cashShare)})은 각 경로의 인플레이션에 위의 가산 금리를 더해 얻습니다.</>}
+                    {other > 0 && <> 기타 자산({fmtPctPlain(otherShare)})은 매년 {fmtPctPlain(num(otherRate) / 100)}의 일정한 수익을 얻습니다.</>}
+                    {' '}세 부분은 매월 리밸런싱합니다.
+                    {' '}인플레이션은 위의 비율을 중심으로 매년 무작위로 정해집니다. 포트폴리오 구성은 일정하게 유지하며 세금, 수수료, 건강보험료는 포함하지 않습니다.
+                    2000년 이후는 이 종목들 중 다수에 좋은 시기였으므로 나쁜 경우 열을 기준으로 계획하는 것이 합리적입니다.
+                    이는 추정치이며 투자 조언이 아닙니다.
+                  </>
+                ) : (
+                <>
                 <strong style={{ color: 'var(--text)' }}>How it works.</strong> Each of the {result.paths.toLocaleString()} paths runs month by month:
                 spending is withdrawn (raised by that path's inflation so far), income is added once it starts, then the balance earns a random return.
                 {model === 'historical'
@@ -505,6 +523,8 @@ export default function Projection() {
                 {' '}Inflation is drawn for each year around the rate above. The portfolio's mix is held constant; taxes, fees and health insurance are not included.
                 History since 2000 was a good period for many of these holdings, so the bad-case column is a sensible one to plan around.
                 These are estimates, not financial advice.
+                </>
+                )}
               </div>
             </div>
           )}

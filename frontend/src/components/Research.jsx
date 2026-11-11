@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, Legend } from 'recharts';
 import { api } from '../api.js';
+import { t } from '../i18n.jsx';
 
 // Compact money, e.g. 1_250_000_000 -> "1.25B".
 function fmtC(n) {
@@ -72,15 +73,15 @@ export default function Research() {
     <>
       <div className="panel">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <h2 style={{ margin: 0 }}>Research</h2>
+          <h2 style={{ margin: 0 }}>{t('Research')}</h2>
           <TickerSearch onPick={s => setSymbol(s)} current={symbol} />
         </div>
-        {!symbol && <div className="loading" style={{ marginTop: 12 }}>Search a company or ticker to view its financial statements, ratios, and forward estimates.</div>}
+        {!symbol && <div className="loading" style={{ marginTop: 12 }}>{t('Search a company or ticker to view its financial statements, ratios, and forward estimates.')}</div>}
       </div>
 
       {symbol && (
-        loading ? <div className="loading">Loading {symbol} fundamentals…</div>
-        : err ? <div className="error">Failed to load: {err}</div>
+        loading ? <div className="loading">{t('Loading {name} fundamentals…', { name: symbol })}</div>
+        : err ? <div className="error">{t('Failed to load: {err}', { err })}</div>
         : data ? <ResearchBody data={data} currency={currency} setCurrency={setCurrency}
                     freq={freq} setFreq={setFreq} tab={tab} setTab={setTab}
                     commonSize={commonSize} setCommonSize={setCommonSize} showEst={showEst} setShowEst={setShowEst} />
@@ -106,14 +107,14 @@ function ResearchBody({ data, currency, setCurrency, freq, setFreq, tab, setTab,
           <div>
             <h2 style={{ margin: 0 }}>{data.symbol} <span style={{ fontWeight: 400, fontSize: 15, color: 'var(--text-dim)' }}>{data.display_name}</span></h2>
             <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 4 }}>
-              Reports in {data.reporting_currency || '–'}{ccy && ccy !== data.reporting_currency ? ` · shown in ${ccy}` : ''}
-              {!data.fx_supported && <span style={{ color: 'var(--amber)' }}> · FX conversion unavailable for {data.reporting_currency}, showing native</span>}
+              {t('Reports in {ccy}', { ccy: data.reporting_currency || '–' })}{ccy && ccy !== data.reporting_currency ? ` · ${t('shown in {ccy}', { ccy })}` : ''}
+              {!data.fx_supported && <span style={{ color: 'var(--amber)' }}> · {t('FX conversion unavailable for {ccy}, showing native', { ccy: data.reporting_currency })}</span>}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>Currency</span>
+            <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{t('Currency')}</span>
             {CURRENCIES.map(c => (
-              <button key={c} className={`btn ${currency === c ? '' : 'ghost'}`} onClick={() => setCurrency(c)}>{c === 'native' ? 'Native' : c}</button>
+              <button key={c} className={`btn ${currency === c ? '' : 'ghost'}`} onClick={() => setCurrency(c)}>{c === 'native' ? t('Native') : c}</button>
             ))}
           </div>
         </div>
@@ -133,28 +134,28 @@ function ResearchBody({ data, currency, setCurrency, freq, setFreq, tab, setTab,
       <div className="panel">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
           <div style={{ display: 'flex', gap: 6 }}>
-            {TABS.map(t => (
-              <button key={t.key} className={`btn ${tab === t.key ? '' : 'ghost'}`} onClick={() => setTab(t.key)}>{t.label}</button>
+            {TABS.map(tb => (
+              <button key={tb.key} className={`btn ${tab === tb.key ? '' : 'ghost'}`} onClick={() => setTab(tb.key)}>{t(tb.label)}</button>
             ))}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', gap: 6 }}>
-              <button className={`btn ${freq === 'quarterly' ? '' : 'ghost'}`} onClick={() => setFreq('quarterly')}>Quarterly 8Q</button>
-              <button className={`btn ${freq === 'annual' ? '' : 'ghost'}`} onClick={() => setFreq('annual')}>Annual 5Y</button>
+              <button className={`btn ${freq === 'quarterly' ? '' : 'ghost'}`} onClick={() => setFreq('quarterly')}>{t('Quarterly 8Q')}</button>
+              <button className={`btn ${freq === 'annual' ? '' : 'ghost'}`} onClick={() => setFreq('annual')}>{t('Annual 5Y')}</button>
             </div>
             <label style={{ fontSize: 12, color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-              <input type="checkbox" checked={commonSize} onChange={e => setCommonSize(e.target.checked)} /> Common-size %
+              <input type="checkbox" checked={commonSize} onChange={e => setCommonSize(e.target.checked)} /> {t('Common-size %')}
             </label>
             {tab === 'income' && (
               <label style={{ fontSize: 12, color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-                <input type="checkbox" checked={showEst} onChange={e => setShowEst(e.target.checked)} /> Estimates
+                <input type="checkbox" checked={showEst} onChange={e => setShowEst(e.target.checked)} /> {t('Estimates')}
               </label>
             )}
           </div>
         </div>
 
         {periods.length === 0 ? (
-          <div className="loading">No {freq} statement data available for this ticker.</div>
+          <div className="loading">{freq === 'annual' ? t('No annual statement data available for this ticker.') : t('No quarterly statement data available for this ticker.')}</div>
         ) : (
           <StatementTable tab={tab} periods={periods} est={tab === 'income' && showEst ? est : []} freq={freq} ccy={ccy} commonSize={commonSize} />
         )}
@@ -204,7 +205,7 @@ function StatementTable({ tab, periods, est, freq, ccy, commonSize }) {
         <tbody>
           {rows.map(([key, label]) => (
             <tr key={key}>
-              <td style={{ position: 'sticky', left: 0, background: 'var(--panel)' }}>{label}</td>
+              <td style={{ position: 'sticky', left: 0, background: 'var(--panel)' }}>{t(label)}</td>
               {periods.map(p => <td key={p.fiscal_date} className="num">{cell(p, key)}</td>)}
               {est.map(e => (
                 <td key={e.period_label} className="num" style={{ color: 'var(--accent)' }}>
@@ -225,7 +226,7 @@ function StatementTable({ tab, periods, est, freq, ccy, commonSize }) {
           )}
         </tbody>
       </table>
-      {est.length > 0 && <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 8 }}>Columns marked <span style={{ color: 'var(--accent)' }}>e</span> are analyst-consensus estimates.</div>}
+      {est.length > 0 && <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 8 }}>{t('Columns marked')} <span style={{ color: 'var(--accent)' }}>e</span> {t('are analyst-consensus estimates.')}</div>}
     </div>
   );
 }
@@ -234,7 +235,7 @@ function DerivedRow({ label, periods, est, calc, estCalc, pct, money, color }) {
   const fmt = pct ? (v => fmtPct(v)) : money ? (v => fmtNum(v)) : fmtC;
   return (
     <tr style={{ color: 'var(--text-dim)' }}>
-      <td style={{ position: 'sticky', left: 0, background: 'var(--panel)', fontStyle: 'italic' }}>{label}</td>
+      <td style={{ position: 'sticky', left: 0, background: 'var(--panel)', fontStyle: 'italic' }}>{t(label)}</td>
       {periods.map((p, i) => {
         const val = calc(p, i);
         return <td key={p.fiscal_date} className={`num ${color ? cls(val) : ''}`}>{fmt(val)}</td>;
@@ -266,12 +267,12 @@ function IncomeChart({ periods, est, freq, ccy }) {
           <YAxis yAxisId="l" stroke="#9aa0a6" fontSize={11} width={52} tickFormatter={fmtC} />
           <YAxis yAxisId="r" orientation="right" stroke="#34d399" fontSize={11} width={40} tickFormatter={v => `${v.toFixed(0)}%`} />
           <Tooltip contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }}
-            formatter={(val, name) => name === 'Net margin' ? [`${Number(val).toFixed(1)}%`, name] : [`${fmtC(val)} ${ccy}`, name]} />
+            formatter={(val, name) => name === t('Net margin') ? [`${Number(val).toFixed(1)}%`, name] : [`${fmtC(val)} ${ccy}`, name]} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar yAxisId="l" dataKey="revenue" name={`Revenue (${ccy})`} radius={[2, 2, 0, 0]} maxBarSize={48}>
+          <Bar yAxisId="l" dataKey="revenue" name={t('Revenue ({ccy})', { ccy })} radius={[2, 2, 0, 0]} maxBarSize={48}>
             {rows.map((r, i) => <Cell key={i} fill={r.est ? '#4a9eff66' : '#4a9eff'} stroke={r.est ? '#4a9eff' : 'none'} strokeDasharray={r.est ? '4 2' : '0'} />)}
           </Bar>
-          <Line yAxisId="r" type="monotone" dataKey="margin" name="Net margin" stroke="#34d399" strokeWidth={2} dot={{ r: 2 }} connectNulls />
+          <Line yAxisId="r" type="monotone" dataKey="margin" name={t('Net margin')} stroke="#34d399" strokeWidth={2} dot={{ r: 2 }} connectNulls />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -287,12 +288,12 @@ function ModelVsConsensus({ consensus, model, ccy }) {
   const dEps = c?.eps && m?.eps ? m.eps / c.eps - 1 : null;
   return (
     <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.8 }}>
-      <strong style={{ color: 'var(--text)' }}>Next quarter — consensus vs. model (ML)</strong>
-      <div>Revenue: consensus <b style={{ color: 'var(--text)' }}>{fmtC(c?.revenue)} {ccy}</b> · model <b style={{ color: 'var(--text)' }}>{fmtC(m.revenue)}</b>
-        {dRev != null && <span className={cls(dRev)}> ({dRev > 0 ? '+' : ''}{fmtPct(dRev)} vs consensus)</span>}</div>
-      <div>EPS: consensus <b style={{ color: 'var(--text)' }}>{fmtNum(c?.eps)}</b> · model <b style={{ color: 'var(--text)' }}>{fmtNum(m.eps)}</b>
-        {dEps != null && <span className={cls(dEps)}> ({dEps > 0 ? '+' : ''}{fmtPct(dEps)} vs consensus)</span>}</div>
-      <div style={{ fontStyle: 'italic', marginTop: 4 }}>Model is a seasonal-naive house view (a divergence signal), not a consensus replacement.</div>
+      <strong style={{ color: 'var(--text)' }}>{t('Next quarter — consensus vs. model (ML)')}</strong>
+      <div>{t('Revenue: consensus')} <b style={{ color: 'var(--text)' }}>{fmtC(c?.revenue)} {ccy}</b> · {t('model')} <b style={{ color: 'var(--text)' }}>{fmtC(m.revenue)}</b>
+        {dRev != null && <span className={cls(dRev)}> ({dRev > 0 ? '+' : ''}{fmtPct(dRev)} {t('vs consensus')})</span>}</div>
+      <div>{t('EPS: consensus')} <b style={{ color: 'var(--text)' }}>{fmtNum(c?.eps)}</b> · {t('model')} <b style={{ color: 'var(--text)' }}>{fmtNum(m.eps)}</b>
+        {dEps != null && <span className={cls(dEps)}> ({dEps > 0 ? '+' : ''}{fmtPct(dEps)} {t('vs consensus')})</span>}</div>
+      <div style={{ fontStyle: 'italic', marginTop: 4 }}>{t('Model is a seasonal-naive house view (a divergence signal), not a consensus replacement.')}</div>
     </div>
   );
 }
@@ -300,7 +301,7 @@ function ModelVsConsensus({ consensus, model, ccy }) {
 function Stat({ label, value, sub }) {
   return (
     <div>
-      <div className="metric-label">{label}</div>
+      <div className="metric-label">{t(label)}</div>
       <div style={{ fontSize: 18, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{value}
         {sub && <span style={{ fontSize: 10, color: 'var(--text-dim)', fontWeight: 400 }}> {sub}</span>}</div>
     </div>
@@ -318,12 +319,12 @@ function TickerSearch({ onPick, current }) {
   useEffect(() => {
     if (q.trim().length < 2) { setResults([]); return; }
     let cancelled = false;
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       api.searchSymbols(q.trim())
         .then(r => { if (!cancelled) { setResults(r.results || []); setOpen(true); setHi(0); } })
         .catch(() => { if (!cancelled) setResults([]); });
     }, 300);
-    return () => { cancelled = true; clearTimeout(t); };
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [q]);
   useEffect(() => { activeRef.current?.scrollIntoView({ block: 'nearest' }); }, [hi]);
 
@@ -341,7 +342,7 @@ function TickerSearch({ onPick, current }) {
       <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey}
         onFocus={() => results.length && setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        placeholder={current ? `${current} — search another…` : 'Search company or ticker…'}
+        placeholder={current ? t('{name} — search another…', { name: current }) : t('Search company or ticker…')}
         style={{ ...field, width: '100%' }} />
       {open && results.length > 0 && (
         <div style={{ position: 'absolute', zIndex: 10, left: 0, right: 0, marginTop: 4, background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 6, maxHeight: 280, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>

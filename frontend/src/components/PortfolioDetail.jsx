@@ -5,10 +5,16 @@ import { useLiveQuotes } from '../useLiveQuotes.js';
 import MptPanel from './MptPanel.jsx';
 import PortfolioValueChart from './PortfolioValueChart.jsx';
 import PortfolioAnalytics from './PortfolioAnalytics.jsx';
+import { t, isKo } from '../i18n.jsx';
 
 function fmtNum(n, d = 2) {
   if (n == null || isNaN(n)) return '–';
   return Number(n).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+// Share counts: whole numbers as before, fractions (0.05 BTC) to as many as 8 decimals.
+function fmtShares(n) {
+  if (n == null || isNaN(n)) return '–';
+  return Number(n).toLocaleString(undefined, { maximumFractionDigits: 8 });
 }
 function fmtMoney(n, ccy, d = 0) {
   if (n == null || isNaN(n)) return '–';
@@ -84,9 +90,9 @@ export default function PortfolioDetail() {
   const { quotes: liveQuotes, err: liveErr } = useLiveQuotes(liveSymbols);
 
   const deletePortfolio = async () => {
-    if (!window.confirm(`Delete portfolio "${data?.name}" and all its holdings? This cannot be undone.`)) return;
+    if (!window.confirm(t('Delete portfolio "{name}" and all its holdings? This cannot be undone.', { name: data?.name }))) return;
     try { await api.deletePortfolio(id); navigate('/portfolios'); }
-    catch (e) { window.alert(`Failed to delete: ${e.message}`); }
+    catch (e) { window.alert(t('Failed to delete: {err}', { err: e.message })); }
   };
 
   const startRename = () => { setNameDraft(data.name); setEditingName(true); };
@@ -95,11 +101,11 @@ export default function PortfolioDetail() {
     setEditingName(false);
     if (!n || n === data.name) return;
     try { await api.renamePortfolio(id, n); load(); }
-    catch (e) { window.alert(`Rename failed: ${e.message}`); }
+    catch (e) { window.alert(t('Rename failed: {err}', { err: e.message })); }
   };
 
-  if (loading) return <div className="loading">Loading portfolio…</div>;
-  if (err) return <div className="error">Failed to load: {err}</div>;
+  if (loading) return <div className="loading">{t('Loading portfolio…')}</div>;
+  if (err) return <div className="error">{t('Failed to load: {err}', { err })}</div>;
   if (!data) return null;
 
   const ccy = data.base_currency;
@@ -158,7 +164,7 @@ export default function PortfolioDetail() {
   const st = data.totals;
   const liveValue = holdings.reduce((a, h) => a + (Number(h.market_value_base) || 0), 0);
   const liveSecValue = holdings.reduce((a, h) => a + (isCash(h.symbol) ? 0 : Number(h.market_value_base) || 0), 0);
-  const t = !overlaid ? st : {
+  const tot = !overlaid ? st : {
     ...st,
     market_value: liveValue,
     securities_value: liveSecValue,
@@ -176,7 +182,7 @@ export default function PortfolioDetail() {
   // ---------------------------------------------------------------------------
 
   // Show the securities/cash split on the value & cost cards only when cash is held.
-  const hasCash = (t.cash_value || 0) > 0;
+  const hasCash = (tot.cash_value || 0) > 0;
   // Distinct account labels already used in this portfolio — offered as suggestions in the add forms.
   const accounts = [...new Set(holdings.map(h => (h.account || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   // Cash doesn't count toward the securities cap.
@@ -222,13 +228,13 @@ export default function PortfolioDetail() {
   const allSelected = hasHoldings && holdings.every(h => selected.has(h.id));
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(holdings.map(h => h.id)));
 
-  const startEditShares = (h) => { setEditShareId(h.id); setShareDraft(String(h.shares)); };
+  const startEditShares = (h) => { setEditShareId(h.id); setShareDraft(String(Number(h.shares))); };
   const saveShares = async (h) => {
     const n = Number(shareDraft);
     setEditShareId(null);
     if (!(n > 0) || n === Number(h.shares)) return;
     try { await api.updateHolding(id, h.id, { shares: n }); load(); }
-    catch (e) { window.alert(`Update failed: ${e.message}`); }
+    catch (e) { window.alert(t('Update failed: {err}', { err: e.message })); }
   };
 
   const startEditCost = (h) => { setEditCostId(h.id); setCostDraft(String(h.cost_price)); };
@@ -237,7 +243,7 @@ export default function PortfolioDetail() {
     setEditCostId(null);
     if (!(n > 0) || n === Number(h.cost_price)) return;
     try { await api.updateHolding(id, h.id, { cost_price: n }); load(); }
-    catch (e) { window.alert(`Update failed: ${e.message}`); }
+    catch (e) { window.alert(t('Update failed: {err}', { err: e.message })); }
   };
 
   const startEditAccount = (h) => { setEditAccountId(h.id); setAccountDraft(h.account || ''); };
@@ -246,16 +252,16 @@ export default function PortfolioDetail() {
     setEditAccountId(null);
     if (v === (h.account || '')) return; // unchanged (account may legitimately be blank)
     try { await api.updateHolding(id, h.id, { account: v }); load(); }
-    catch (e) { window.alert(`Update failed: ${e.message}`); }
+    catch (e) { window.alert(t('Update failed: {err}', { err: e.message })); }
   };
 
   const removeSelected = async () => {
     const ids = [...selected];
     if (ids.length === 0) return;
     const syms = holdings.filter(h => selected.has(h.id)).map(h => h.symbol);
-    if (!window.confirm(`Remove ${ids.length} holding${ids.length > 1 ? 's' : ''} (${syms.join(', ')}) from this portfolio?`)) return;
+    if (!window.confirm(t(ids.length > 1 ? 'Remove {n} holdings ({syms}) from this portfolio?' : 'Remove {n} holding ({syms}) from this portfolio?', { n: ids.length, syms: syms.join(', ') }))) return;
     try { await Promise.all(ids.map(hid => api.removeHolding(id, hid))); }
-    catch (e) { window.alert(`Some removals failed: ${e.message}`); }
+    catch (e) { window.alert(t('Some removals failed: {err}', { err: e.message })); }
     finally { exitRemoveMode(); load(); }
   };
 
@@ -263,7 +269,7 @@ export default function PortfolioDetail() {
     <>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div>
-          <Link to="/portfolios">← Portfolios</Link>
+          <Link to="/portfolios">← {t('Portfolios')}</Link>
           {editingName ? (
             <input
               autoFocus
@@ -274,12 +280,12 @@ export default function PortfolioDetail() {
               style={{ margin: '8px 0 0', fontSize: 28, fontWeight: 600, background: 'var(--panel-2)', border: '1px solid var(--accent)', borderRadius: 6, color: 'var(--text)', padding: '2px 8px', width: 'min(420px, 80vw)' }}
             />
           ) : (
-            <h1 style={{ margin: '8px 0 0', cursor: 'text' }} onDoubleClick={startRename} title="Double-click to rename">
+            <h1 style={{ margin: '8px 0 0', cursor: 'text' }} onDoubleClick={startRename} title={t('Double-click to rename')}>
               {data.name}
             </h1>
           )}
           <div style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 4 }}>
-            Base currency {ccy} · {securityCount}/{data.max_holdings} holdings
+            {t('Base currency {ccy} · {n}/{max} holdings', { ccy, n: securityCount, max: data.max_holdings })}
             {data.krw_per_usd ? <> · USD/KRW {fmtNum(data.krw_per_usd)}</> : null}
             {/* Only worth the space once something is actually held in yen. */}
             {data.krw_per_jpy && data.holdings.some(h => h.currency === 'JPY')
@@ -290,12 +296,12 @@ export default function PortfolioDetail() {
           className="btn ghost"
           onClick={deletePortfolio}
           disabled={hasHoldings}
-          title={hasHoldings ? 'Remove all holdings first to delete this portfolio' : 'Delete this portfolio'}
+          title={hasHoldings ? t('Remove all holdings first to delete this portfolio') : t('Delete this portfolio')}
           style={hasHoldings
             ? { marginLeft: 'auto', color: 'var(--text-dim)', borderColor: 'var(--border)', cursor: 'not-allowed' }
             : { marginLeft: 'auto', color: 'var(--red)', borderColor: 'var(--red)' }}
         >
-          Delete portfolio
+          {t('Delete portfolio')}
         </button>
       </div>
 
@@ -306,46 +312,46 @@ export default function PortfolioDetail() {
             <>
               <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#f5a623' }} />
               {anyLive
-                ? 'Live prices — value, gain and returns update every minute.'
-                : 'Prices newer than the last stored close — markets are shut, but this session has not been saved yet.'}
-              {' '}Not saved; the stored close stays the record.
+                ? t('Live prices — value, gain and returns update every minute.')
+                : t('Prices newer than the last stored close — markets are shut, but this session has not been saved yet.')}
+              {' '}{t('Not saved; the stored close stays the record.')}
             </>
           )}
-          {liveErr && <span style={{ color: 'var(--red)' }}>Live quotes unavailable ({liveErr}) — showing stored closes.</span>}
+          {liveErr && <span style={{ color: 'var(--red)' }}>{t('Live quotes unavailable ({err}) — showing stored closes.', { err: liveErr })}</span>}
         </div>
       )}
 
       <div className="grid-5">
         <Metric
-          label="Market Value" value={fmtMoney(t.market_value, ccy)}
-          sub={hasCash && <SecCashSub securities={t.securities_value} cash={t.cash_value} ccy={ccy} fmt={fmtMoney} />}
+          label="Market Value" value={fmtMoney(tot.market_value, ccy)}
+          sub={hasCash && <SecCashSub securities={tot.securities_value} cash={tot.cash_value} ccy={ccy} fmt={fmtMoney} />}
         />
         <Metric
-          label="Cost Basis" value={fmtMoney(t.cost_basis, ccy)}
-          sub={hasCash && <SecCashSub securities={t.securities_cost} cash={t.cash_value} ccy={ccy} fmt={fmtMoney} />}
+          label="Cost Basis" value={fmtMoney(tot.cost_basis, ccy)}
+          sub={hasCash && <SecCashSub securities={tot.securities_cost} cash={tot.cash_value} ccy={ccy} fmt={fmtMoney} />}
         />
-        <Metric label="Total Gain" value={fmtMoney(t.gain, ccy)} color={cls(t.gain)} />
+        <Metric label="Total Gain" value={fmtMoney(tot.gain, ccy)} color={cls(tot.gain)} />
         <Metric
-          label="Inception" value={fmtPct(t.return_inception)} color={cls(t.return_inception)}
-          sub={hasCash && <CashInclSub value={t.return_inception_with_cash} />}
+          label="Inception" value={fmtPct(tot.return_inception)} color={cls(tot.return_inception)}
+          sub={hasCash && <CashInclSub value={tot.return_inception_with_cash} />}
         />
         <Metric
-          label="YTD" value={fmtPct(t.return_ytd)} color={cls(t.return_ytd)}
-          sub={hasCash && <CashInclSub value={t.return_ytd_with_cash} />}
+          label="YTD" value={fmtPct(tot.return_ytd)} color={cls(tot.return_ytd)}
+          sub={hasCash && <CashInclSub value={tot.return_ytd_with_cash} />}
         />
       </div>
 
       {showKrwCards && (
         <div className="grid-3" style={{ marginTop: 16 }}>
           <Metric
-            label="Market Value (KRW)" value={fmtMoney(toKrw(t.market_value), 'KRW')}
-            sub={hasCash && <SecCashSub securities={toKrw(t.securities_value)} cash={toKrw(t.cash_value)} ccy="KRW" fmt={fmtMoney} />}
+            label="Market Value (KRW)" value={fmtMoney(toKrw(tot.market_value), 'KRW')}
+            sub={hasCash && <SecCashSub securities={toKrw(tot.securities_value)} cash={toKrw(tot.cash_value)} ccy="KRW" fmt={fmtMoney} />}
           />
           <Metric
-            label="Cost Basis (KRW)" value={fmtMoney(toKrw(t.cost_basis), 'KRW')}
-            sub={hasCash && <SecCashSub securities={toKrw(t.securities_cost)} cash={toKrw(t.cash_value)} ccy="KRW" fmt={fmtMoney} />}
+            label="Cost Basis (KRW)" value={fmtMoney(toKrw(tot.cost_basis), 'KRW')}
+            sub={hasCash && <SecCashSub securities={toKrw(tot.securities_cost)} cash={toKrw(tot.cash_value)} ccy="KRW" fmt={fmtMoney} />}
           />
-          <Metric label="Total Gain (KRW)" value={fmtMoney(toKrw(t.gain), 'KRW')} color={cls(t.gain)} />
+          <Metric label="Total Gain (KRW)" value={fmtMoney(toKrw(tot.gain), 'KRW')} color={cls(tot.gain)} />
         </div>
       )}
 
@@ -357,26 +363,26 @@ export default function PortfolioDetail() {
         <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0 16px' }} />
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
-          <h2 style={{ margin: 0 }}>Holdings</h2>
+          <h2 style={{ margin: 0 }}>{t('Holdings')}</h2>
           {hasHoldings && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginLeft: 'auto', justifyContent: 'flex-end' }}>
               {!removeMode ? (
                 <button className="btn ghost" onClick={() => setRemoveMode(true)} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}>
-                  Remove
+                  {t('Remove')}
                 </button>
               ) : (
                 <>
                   <button className="btn" onClick={removeSelected} disabled={selected.size === 0} style={{ background: 'var(--red)' }}>
-                    Remove selected ({selected.size})
+                    {t('Remove selected ({n})', { n: selected.size })}
                   </button>
-                  <button className="btn ghost" onClick={exitRemoveMode}>Cancel</button>
+                  <button className="btn ghost" onClick={exitRemoveMode}>{t('Cancel')}</button>
                 </>
               )}
             </div>
           )}
         </div>
         {holdings.length === 0 ? (
-          <div className="loading">No holdings yet — register a ticker above.</div>
+          <div className="loading">{t('No holdings yet — register a ticker above.')}</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table>
@@ -384,15 +390,15 @@ export default function PortfolioDetail() {
                 <tr>
                   {removeMode && (
                     <th style={{ width: 28 }}>
-                      <input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all" style={{ cursor: 'pointer', width: 18, height: 18 }} />
+                      <input type="checkbox" checked={allSelected} onChange={toggleAll} title={t('Select all')} style={{ cursor: 'pointer', width: 18, height: 18 }} />
                     </th>
                   )}
                   <SortTh label="Symbol" col="symbol" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                   <SortTh label="Account *" col="account" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                   <SortTh label="Shares *" col="shares" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                   <SortTh label="Cost *" col="cost_price" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-                  <SortTh label="Price" col="latest_close" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} title="Live while the holding's market is open (dotted underline), otherwise the last stored close" />
-                  <SortTh label={`Value (${ccy})`} col="market_value_base" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                  <SortTh label="Price" col="latest_close" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} title={t("Live while the holding's market is open (dotted underline), otherwise the last stored close")} />
+                  <SortTh label={t('Value ({ccy})', { ccy })} col="market_value_base" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                   <SortTh label="Weight" col="weight" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                   <SortTh label="Inception" col="return_inception" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                   <SortTh label="1Y" col="return_1y" num sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
@@ -405,13 +411,13 @@ export default function PortfolioDetail() {
                   <tr key={h.id} style={removeMode && selected.has(h.id) ? { background: 'var(--panel-2)' } : undefined}>
                     {removeMode && (
                       <td>
-                        <input type="checkbox" checked={selected.has(h.id)} onChange={() => toggle(h.id)} title={`Select ${h.symbol}`} style={{ cursor: 'pointer', width: 18, height: 18 }} />
+                        <input type="checkbox" checked={selected.has(h.id)} onChange={() => toggle(h.id)} title={t('Select {name}', { name: h.symbol })} style={{ cursor: 'pointer', width: 18, height: 18 }} />
                       </td>
                     )}
                     <td>
                       {isCash(h.symbol) ? (
                         <>
-                          <span>💵 Cash</span>
+                          <span>💵 {t('Cash')}</span>
                           <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>{cashCcy(h.symbol)}</div>
                         </>
                       ) : (
@@ -423,7 +429,7 @@ export default function PortfolioDetail() {
                     </td>
                     <td
                       onDoubleClick={() => !removeMode && startEditAccount(h)}
-                      title={removeMode ? undefined : 'Double-click to edit account'}
+                      title={removeMode ? undefined : t('Double-click to edit account')}
                       style={removeMode ? { fontSize: 12 } : { cursor: 'pointer', fontSize: 12 }}
                     >
                       {editAccountId === h.id ? (
@@ -435,7 +441,7 @@ export default function PortfolioDetail() {
                           onChange={e => setAccountDraft(e.target.value)}
                           onBlur={() => saveAccount(h)}
                           onKeyDown={e => { if (e.key === 'Enter') saveAccount(h); else if (e.key === 'Escape') setEditAccountId(null); }}
-                          placeholder="e.g. Roth"
+                          placeholder={t('e.g. Roth')}
                           style={{ ...field, width: 120 }}
                         />
                       ) : (
@@ -445,7 +451,7 @@ export default function PortfolioDetail() {
                     <td
                       className="num"
                       onDoubleClick={() => !removeMode && startEditShares(h)}
-                      title={removeMode ? undefined : 'Double-click to edit shares'}
+                      title={removeMode ? undefined : t('Double-click to edit shares')}
                       style={removeMode ? undefined : { cursor: 'pointer' }}
                     >
                       {editShareId === h.id ? (
@@ -461,13 +467,13 @@ export default function PortfolioDetail() {
                           style={{ ...field, width: 90, textAlign: 'right' }}
                         />
                       ) : (
-                        <span style={editableHint}>{fmtNum(h.shares, 0)}</span>
+                        <span style={editableHint}>{fmtShares(h.shares)}</span>
                       )}
                     </td>
                     <td
                       className="num"
                       onDoubleClick={() => !removeMode && !isCash(h.symbol) && startEditCost(h)}
-                      title={removeMode || isCash(h.symbol) ? undefined : 'Double-click to edit cost basis'}
+                      title={removeMode || isCash(h.symbol) ? undefined : t('Double-click to edit cost basis')}
                       style={removeMode || isCash(h.symbol) ? undefined : { cursor: 'pointer' }}
                     >
                       {isCash(h.symbol) ? (
@@ -502,8 +508,8 @@ export default function PortfolioDetail() {
                             ? <span
                                 style={liveHint}
                                 title={h.is_live
-                                  ? 'Live price — market open. Not stored; reverts to the last close on reload.'
-                                  : 'Newer than the last stored close — this session has not been saved yet. Not stored; reverts on reload.'}
+                                  ? t('Live price — market open. Not stored; reverts to the last close on reload.')
+                                  : t('Newer than the last stored close — this session has not been saved yet. Not stored; reverts on reload.')}
                               >{fmtNum(h.latest_close)}</span>
                             : fmtNum(h.latest_close)}
                           {h.currency !== ccy && h.latest_close != null && krwPerUsd && (
@@ -523,7 +529,7 @@ export default function PortfolioDetail() {
               </tbody>
             </table>
             <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 12, marginBottom: 0 }}>
-              * can be edited by double clicking
+              {t('* can be edited by double clicking')}
             </p>
           </div>
         )}
@@ -535,7 +541,7 @@ export default function PortfolioDetail() {
           />
         ) : (
           <div style={{ marginTop: 12 }}>
-            <button className="btn" onClick={() => setMptOpen(true)}>✦ Suggest optimal allocation (MPT)</button>
+            <button className="btn" onClick={() => setMptOpen(true)}>{t('✦ Suggest optimal allocation (MPT)')}</button>
           </div>
         ))}
       </div>
@@ -554,7 +560,7 @@ export default function PortfolioDetail() {
 function Metric({ label, value, color, sub }) {
   return (
     <div className="panel">
-      <div className="metric-label">{label}</div>
+      <div className="metric-label">{t(label)}</div>
       <div className={`metric ${color || ''}`} style={{ fontSize: 20 }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6, lineHeight: 1.5 }}>{sub}</div>}
     </div>
@@ -566,7 +572,7 @@ function Metric({ label, value, color, sub }) {
 function CashInclSub({ value }) {
   return (
     <span style={{ marginTop: 2, display: 'inline-block' }}>
-      <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>incl. cash </span>
+      <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>{t('incl. cash')} </span>
       <span className={cls(value)} style={{ fontSize: 13, fontWeight: 600 }}>{fmtPct(value)}</span>
     </span>
   );
@@ -576,8 +582,8 @@ function CashInclSub({ value }) {
 function SecCashSub({ securities, cash, ccy, fmt }) {
   return (
     <>
-      <div>Securities {fmt(securities, ccy)}</div>
-      <div>Cash <span style={{ color: 'var(--text)' }}>{fmt(cash, ccy)}</span></div>
+      <div>{t('Securities')} {fmt(securities, ccy)}</div>
+      <div>{t('Cash')} <span style={{ color: 'var(--text)' }}>{fmt(cash, ccy)}</span></div>
     </>
   );
 }
@@ -590,9 +596,9 @@ function SortTh({ label, col, num, sortKey, sortDir, onSort, title }) {
       className={num ? 'num' : undefined}
       onClick={() => onSort(col)}
       style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
-      title={title ? `${title} — click to sort` : 'Click to sort'}
+      title={title ? `${title} — ${t('click to sort')}` : t('Click to sort')}
     >
-      {label}<span style={{ opacity: active ? 1 : 0.25, marginLeft: 4 }}>{active ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>
+      {t(label)}<span style={{ opacity: active ? 1 : 0.25, marginLeft: 4 }}>{active ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>
     </th>
   );
 }
@@ -626,13 +632,13 @@ function AddHoldingForm({ portfolioId, full, onAdded, embedded, accounts = [], h
     if (selected || query.trim().length < 2) { setResults([]); return; }
     let cancelled = false;
     setSearching(true);
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       api.searchSymbols(query.trim())
         .then(r => { if (!cancelled) { setResults(r.results || []); setShowResults(true); setHighlight(0); } })
         .catch(() => { if (!cancelled) setResults([]); })
         .finally(() => { if (!cancelled) setSearching(false); });
     }, 300);
-    return () => { cancelled = true; clearTimeout(t); };
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [query, selected]);
 
   // Keep the highlighted row scrolled into view.
@@ -673,7 +679,7 @@ function AddHoldingForm({ portfolioId, full, onAdded, embedded, accounts = [], h
   const submit = async (e) => {
     e?.preventDefault();
     const sh = Number(shares);
-    if (!selected || !(sh > 0)) { setErr('Pick a stock and enter a positive volume'); return; }
+    if (!selected || !(sh > 0)) { setErr(t('Pick a stock and enter a positive volume')); return; }
     setBusy(true); setErr(null); setOk(null);
     try {
       const body = { symbol: selected.symbol, shares: sh };
@@ -681,7 +687,7 @@ function AddHoldingForm({ portfolioId, full, onAdded, embedded, accounts = [], h
       if (avgCost !== '' && Number(avgCost) > 0) body.avg_cost = Number(avgCost);
       if (account.trim()) body.account = account.trim();
       const r = await api.addHolding(portfolioId, body);
-      setOk(`Added ${r.symbol}${r.account ? ` (${r.account})` : ''} — ${fmtNum(r.shares, 0)} @ ${fmtNum(r.cost_price)} ${r.currency}`);
+      setOk(`${t('Added')} ${r.symbol}${r.account ? ` (${r.account})` : ''} — ${fmtShares(r.shares)} @ ${fmtNum(r.cost_price)} ${r.currency}`);
       setSelected(null); setMeta(null); setQuery(''); setShares(''); setPrice(''); setAvgCost(''); setAccount('');
       onAdded?.();
     } catch (e2) {
@@ -693,13 +699,13 @@ function AddHoldingForm({ portfolioId, full, onAdded, embedded, accounts = [], h
 
   return (
     <div className={embedded ? '' : 'panel'} style={embedded ? { marginBottom: 16 } : undefined}>
-      <h2 style={{ marginTop: 0 }}>Register a Ticker</h2>
+      <h2 style={{ marginTop: 0 }}>{t('Register a Ticker')}</h2>
       {full ? (
-        <div style={{ color: 'var(--amber)', fontSize: 13 }}>This portfolio is full (max 30 holdings). Remove one to add another.</div>
+        <div style={{ color: 'var(--amber)', fontSize: 13 }}>{t('This portfolio is full (max 30 holdings). Remove one to add another.')}</div>
       ) : !selected ? (
         // Step 1 — search by name or symbol, pick a match.
         <div style={{ position: 'relative', maxWidth: 460 }}>
-          <div className="metric-label" style={{ marginBottom: 4 }}>Search by name or symbol</div>
+          <div className="metric-label" style={{ marginBottom: 4 }}>{t('Search by name or symbol')}</div>
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
@@ -707,10 +713,10 @@ function AddHoldingForm({ portfolioId, full, onAdded, embedded, accounts = [], h
             // Delay so a click on a result registers before the dropdown/indicator hides.
             onBlur={() => setTimeout(() => { setFocused(false); setShowResults(false); }, 150)}
             onKeyDown={onSearchKeyDown}
-            placeholder="e.g. Apple, Tesla, Samsung, ISRG…"
+            placeholder={t('e.g. Apple, Tesla, Samsung, ISRG…')}
             style={{ ...field, width: '100%' }}
           />
-          {focused && searching && <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>Searching…</div>}
+          {focused && searching && <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>{t('Searching…')}</div>}
           {showResults && results.length > 0 && (
             <div style={{ position: 'absolute', zIndex: 10, left: 0, right: 0, marginTop: 4, background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 6, maxHeight: 280, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
               {results.map((r, i) => (
@@ -729,7 +735,7 @@ function AddHoldingForm({ portfolioId, full, onAdded, embedded, accounts = [], h
             </div>
           )}
           {showResults && !searching && query.trim().length >= 2 && results.length === 0 && (
-            <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 6 }}>Not found in the US or Korean markets.</div>
+            <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 6 }}>{t('Not found in the US or Korean markets.')}</div>
           )}
         </div>
       ) : (
@@ -749,17 +755,17 @@ function AddHoldingForm({ portfolioId, full, onAdded, embedded, accounts = [], h
             <input autoFocus type="number" min={0} step="any" value={shares} onChange={e => setShares(e.target.value)} placeholder="0" disabled={busy} style={{ ...field, width: 110 }} />
           </Labeled>
           <Labeled label="Price paid (per share)">
-            <input type="number" min={0} step="any" value={price} onChange={e => setPrice(e.target.value)} placeholder="latest close" disabled={busy} style={{ ...field, width: 130 }} />
+            <input type="number" min={0} step="any" value={price} onChange={e => setPrice(e.target.value)} placeholder={t('latest close')} disabled={busy} style={{ ...field, width: 130 }} />
           </Labeled>
           {/* Only meaningful when adding to a lot that already exists — otherwise the
               average is just the price paid, which the field above already sets. */}
           {existingLot && (
-            <Labeled label={`Avg cost after buy (now ${fmtNum(existingLot.cost_price)})`}>
+            <Labeled label={t('Avg cost after buy (now {v})', { v: fmtNum(existingLot.cost_price) })}>
               <input
                 type="number" min={0} step="any" value={avgCost}
                 onChange={e => setAvgCost(e.target.value)}
-                placeholder="leave blank to compute"
-                title="Set the lot's average cost directly — use your broker's figure instead of letting it fall out of the individual buy prices."
+                placeholder={t('leave blank to compute')}
+                title={t("Set the lot's average cost directly — use your broker's figure instead of letting it fall out of the individual buy prices.")}
                 disabled={busy}
                 style={{ ...field, width: 150 }}
               />
@@ -769,21 +775,33 @@ function AddHoldingForm({ portfolioId, full, onAdded, embedded, accounts = [], h
             <AccountInput value={account} onChange={setAccount} accounts={accounts} disabled={busy} />
           </Labeled>
           <button className="btn" type="submit" disabled={busy || !(Number(shares) > 0)}>
-            {busy ? 'Adding…' : 'Add holding'}
+            {busy ? t('Adding…') : t('Add holding')}
           </button>
-          <button className="btn ghost" type="button" onClick={clearSelection} disabled={busy}>Change</button>
+          <button className="btn ghost" type="button" onClick={clearSelection} disabled={busy}>{t('Change')}</button>
           {ok && <span style={{ fontSize: 12, color: 'var(--green)' }}>{ok}</span>}
-          {err && <span style={{ fontSize: 12, color: 'var(--red)' }}>Error: {err}</span>}
+          {err && <span style={{ fontSize: 12, color: 'var(--red)' }}>{t('Error: {err}', { err })}</span>}
         </form>
       )}
       <p style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 0, marginTop: 12, lineHeight: 1.6 }}>
-        Search a company by name or symbol and pick a match. <strong style={{ color: 'var(--text)' }}>Price paid</strong> auto-fills with the
-        latest close — leave it to use that as your cost basis, or enter what you actually paid. Use <strong style={{ color: 'var(--text)' }}>Account</strong> to
-        hold the same ticker more than once (e.g. across brokerage accounts); same ticker + same account adds to the existing lot. When
-        you're adding to a lot you already hold, <strong style={{ color: 'var(--text)' }}>Avg cost after buy</strong> lets you type your broker's
-        average directly instead of letting it fall out of the individual buy prices — or leave it blank and it's computed for you. You can
-        also correct any average later by double-clicking the <strong style={{ color: 'var(--text)' }}>Cost</strong> cell in the Holdings table. New
-        tickers are auto-tracked and backfilled (~5y) so returns work.
+        {isKo() ? (
+          <>
+            회사 이름이나 심볼로 검색해 선택하세요. <strong style={{ color: 'var(--text)' }}>매입가</strong>는 최근 종가로 자동 입력됩니다 — 그대로 두면 이를 매입 원가로 쓰고,
+            실제로 지불한 가격이 있으면 입력하세요. <strong style={{ color: 'var(--text)' }}>계좌</strong>를 쓰면 같은 종목을 여러 번(예: 증권사 계좌별로) 보유할 수 있습니다.
+            같은 종목 + 같은 계좌는 기존 보유분에 더해집니다. 이미 보유한 종목을 추가할 때는 <strong style={{ color: 'var(--text)' }}>매수 후 평균 단가</strong>에 증권사가 보여주는
+            평균 단가를 직접 입력할 수 있습니다 — 비워 두면 자동으로 계산됩니다. 나중에 보유 종목 표의 <strong style={{ color: 'var(--text)' }}>원가</strong> 칸을 더블클릭해 평균 단가를
+            고칠 수도 있습니다. 새 종목은 자동으로 추적되고 약 5년치 가격이 백필되어 수익률이 계산됩니다.
+          </>
+        ) : (
+          <>
+            Search a company by name or symbol and pick a match. <strong style={{ color: 'var(--text)' }}>Price paid</strong> auto-fills with the
+            latest close — leave it to use that as your cost basis, or enter what you actually paid. Use <strong style={{ color: 'var(--text)' }}>Account</strong> to
+            hold the same ticker more than once (e.g. across brokerage accounts); same ticker + same account adds to the existing lot. When
+            you're adding to a lot you already hold, <strong style={{ color: 'var(--text)' }}>Avg cost after buy</strong> lets you type your broker's
+            average directly instead of letting it fall out of the individual buy prices — or leave it blank and it's computed for you. You can
+            also correct any average later by double-clicking the <strong style={{ color: 'var(--text)' }}>Cost</strong> cell in the Holdings table. New
+            tickers are auto-tracked and backfilled (~5y) so returns work.
+          </>
+        )}
       </p>
     </div>
   );
@@ -792,7 +810,7 @@ function AddHoldingForm({ portfolioId, full, onAdded, embedded, accounts = [], h
 function Labeled({ label, children }) {
   return (
     <div>
-      <div className="metric-label" style={{ marginBottom: 4 }}>{label}</div>
+      <div className="metric-label" style={{ marginBottom: 4 }}>{t(label)}</div>
       {children}
     </div>
   );
@@ -810,7 +828,7 @@ function AccountInput({ value, onChange, accounts = [], disabled }) {
         onChange={e => onChange(e.target.value)}
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        placeholder="Pick or type new…"
+        placeholder={t('Pick or type new…')}
         style={{ ...field, width: '100%' }}
       />
       {open && matches.length > 0 && (
@@ -844,11 +862,11 @@ function AddCashForm({ portfolioId, onAdded, embedded, accounts = [] }) {
   const submit = async (e) => {
     e?.preventDefault();
     const amt = Number(amount);
-    if (!(amt > 0)) { setErr('Enter a positive amount'); return; }
+    if (!(amt > 0)) { setErr(t('Enter a positive amount')); return; }
     setBusy(true); setErr(null); setOk(null);
     try {
       const r = await api.addCash(portfolioId, { currency, amount: amt, account: account.trim() || undefined });
-      setOk(`Added ${fmtNum(r.amount, 0)} ${r.currency}${r.account ? ` (${r.account})` : ''} cash`);
+      setOk(t('Added {amount} cash', { amount: `${fmtNum(r.amount, 0)} ${r.currency}${r.account ? ` (${r.account})` : ''}` }));
       setAmount(''); setAccount('');
       onAdded?.();
     } catch (e2) {
@@ -860,7 +878,7 @@ function AddCashForm({ portfolioId, onAdded, embedded, accounts = [] }) {
 
   return (
     <div className={embedded ? '' : 'panel'} style={embedded ? { marginBottom: 4 } : undefined}>
-      <h2 style={{ marginTop: 0 }}>Add Cash</h2>
+      <h2 style={{ marginTop: 0 }}>{t('Add Cash')}</h2>
       <form onSubmit={submit} style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
         <Labeled label="Currency">
           <select value={currency} onChange={e => setCurrency(e.target.value)} disabled={busy} style={{ ...field, width: 100 }}>
@@ -874,15 +892,24 @@ function AddCashForm({ portfolioId, onAdded, embedded, accounts = [] }) {
           <AccountInput value={account} onChange={setAccount} accounts={accounts} disabled={busy} />
         </Labeled>
         <button className="btn" type="submit" disabled={busy || !(Number(amount) > 0)}>
-          {busy ? 'Adding…' : 'Add cash'}
+          {busy ? t('Adding…') : t('Add cash')}
         </button>
         {ok && <span style={{ fontSize: 12, color: 'var(--green)' }}>{ok}</span>}
-        {err && <span style={{ fontSize: 12, color: 'var(--red)' }}>Error: {err}</span>}
+        {err && <span style={{ fontSize: 12, color: 'var(--red)' }}>{t('Error: {err}', { err })}</span>}
       </form>
       <p style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 0, marginTop: 12, lineHeight: 1.6 }}>
-        Cash is valued 1:1 in its currency and counts toward <strong style={{ color: 'var(--text)' }}>Market Value</strong> and
-        weights. Adjust a balance later by double-clicking its amount in the Holdings table; same currency + same account updates the
-        existing balance. Return/risk analytics exclude cash.
+        {isKo() ? (
+          <>
+            현금은 해당 통화 기준 1:1로 평가되며 <strong style={{ color: 'var(--text)' }}>평가액</strong>과 비중에 포함됩니다. 나중에 보유 종목 표에서 금액을 더블클릭해
+            잔액을 조정할 수 있습니다. 같은 통화 + 같은 계좌는 기존 잔액을 갱신합니다. 수익률/위험 분석에서는 현금을 제외합니다.
+          </>
+        ) : (
+          <>
+            Cash is valued 1:1 in its currency and counts toward <strong style={{ color: 'var(--text)' }}>Market Value</strong> and
+            weights. Adjust a balance later by double-clicking its amount in the Holdings table; same currency + same account updates the
+            existing balance. Return/risk analytics exclude cash.
+          </>
+        )}
       </p>
     </div>
   );

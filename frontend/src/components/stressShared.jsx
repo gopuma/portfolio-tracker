@@ -1,5 +1,6 @@
 // Colours, formatting and small pieces shared by the stress test's two modes (the
 // hypothetical shock and the historical replay), so both read as one page.
+import { t } from '../i18n.jsx';
 
 export const GREEN = '#34d399';
 export const RED = '#f87171';
@@ -61,7 +62,7 @@ export function PortfolioTick({ x, y, payload, nameById, onOpen }) {
   return (
     <text x={x} y={y} dy={4} textAnchor="end" fill={ACCENT} fontSize={12} style={{ cursor: 'pointer' }}
       onClick={e => { e.stopPropagation(); onOpen(payload.value); }}>
-      <title>Open {name}</title>
+      <title>{t('Open {name}', { name })}</title>
       {short}
     </text>
   );
@@ -77,9 +78,9 @@ export function PortfolioChips({ portfolios, hidden, setHidden }) {
   });
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
-      <span style={{ ...dimLabel, marginRight: 4 }}>Show</span>
-      <button className="btn ghost" style={chipStyle} onClick={() => setHidden(new Set())}>All</button>
-      <button className="btn ghost" style={chipStyle} onClick={() => setHidden(new Set(portfolios.map(p => p.id)))}>None</button>
+      <span style={{ ...dimLabel, marginRight: 4 }}>{t('Show')}</span>
+      <button className="btn ghost" style={chipStyle} onClick={() => setHidden(new Set())}>{t('All')}</button>
+      <button className="btn ghost" style={chipStyle} onClick={() => setHidden(new Set(portfolios.map(p => p.id)))}>{t('None')}</button>
       <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
       {portfolios.map(p => {
         const on = !hidden.has(p.id);

@@ -41,3 +41,14 @@ test('missing or unknown timezone falls back to UTC', () => {
   assert.equal(quotesToBars([q('2026-09-13T23:00:00Z', 1)], undefined)[0].trade_date, '2026-09-13');
   assert.equal(quotesToBars([q('2026-09-13T23:00:00Z', 1)], 'Not/AZone')[0].trade_date, '2026-09-13');
 });
+
+test('a close outside the bar\'s low–high range is clamped into it', () => {
+  // KRW=X on 2026-11-02 as Yahoo served it: close under the day's low.
+  const bar = { date: new Date('2026-11-02T00:00:00Z'), open: 1334.23, high: 1346.58, low: 1334.23, close: 1325.52, volume: 0 };
+  assert.equal(quotesToBars([bar], 'Europe/London')[0].close_px, 1334.23);
+  assert.equal(quotesToBars([{ ...bar, close: 1350 }], 'Europe/London')[0].close_px, 1346.58);
+  assert.equal(quotesToBars([{ ...bar, close: 1340 }], 'Europe/London')[0].close_px, 1340);
+  // No usable range: left as reported.
+  assert.equal(quotesToBars([{ ...bar, high: null }], 'Europe/London')[0].close_px, 1325.52);
+  assert.equal(quotesToBars([{ ...bar, high: 1300 }], 'Europe/London')[0].close_px, 1325.52);
+});

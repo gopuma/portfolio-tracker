@@ -48,6 +48,8 @@ goldGapRouter.get('/', async (_req, res, next) => {
     const ret30 = (l, p) => (l && p ? l / Number(p) - 1 : null);
     const krxRet30 = ret30(krxKrwPerG, krx.prior);
     const intlRet30 = ret30(intlLatest, intl.prior);
+    // The same move in won, so it compares with KRX without the exchange rate's move.
+    const intlRet30Krw = intl.prior && fx.prior ? ret30(intlLatest * fxLatest, Number(intl.prior) * Number(fx.prior)) : null;
 
     const intlKrwPerOz = intlLatest * fxLatest;
     const intlKrwPerG = intlKrwPerOz / GRAMS_PER_TROY_OZ;
@@ -73,6 +75,7 @@ goldGapRouter.get('/', async (_req, res, next) => {
         latest_usd_per_oz: intlLatest,
         latest_date: intl.latest_date,
         return_30d: intlRet30,
+        return_30d_krw: intlRet30Krw,
         latest_krw_per_oz: intlKrwPerOz,
         latest_krw_per_g: intlKrwPerG,
       },
@@ -84,8 +87,8 @@ goldGapRouter.get('/', async (_req, res, next) => {
       gap: {
         premium_krw_per_g: premiumKrwPerG,
         premium_pct: premiumPct,
-        return_30d_diff: krxRet30 != null && intlRet30 != null ? krxRet30 - intlRet30 : null,
-        note: 'Premium = (KRX − Intl) per gram, KRW. Intl gold converted via GC=F × USD/KRW ÷ 31.1035.',
+        return_30d_diff: krxRet30 != null && intlRet30Krw != null ? krxRet30 - intlRet30Krw : null,
+        note: 'Premium = (KRX − Intl) per gram, KRW. Intl gold converted via GC=F × USD/KRW ÷ 31.1035. 30d return diff compares both in KRW.',
       },
     });
   } catch (e) { next(e); }

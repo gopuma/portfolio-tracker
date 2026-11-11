@@ -9,10 +9,13 @@ import {
   RED, DIM, ACCENT, BASELINE, BASELINE_OPACITY, DIMMED_OPACITY, tooltipStyle, inputStyle, dimLabel,
   fmtPct, fmtNum, fmtMoney, fmtCompact, cls, signColor, HoldingPctLabel, PortfolioTick, PortfolioChips,
 } from './stressShared.jsx';
+import { t, isKo } from '../i18n.jsx';
 
+// Events tagged group 'crypto' (bitcoin's own crashes and rallies) get their own row.
 const GROUPS = [
   { kind: 'crash', label: 'Crashes' },
   { kind: 'boom', label: 'Booms' },
+  { kind: 'crypto', label: 'Crypto' },
 ];
 const BASES = [
   { key: 'factor', label: "Today's sensitivities", hint: 'Every holding follows its proxy index, scaled by its beta to that proxy today — the factor-model approach risk systems use' },
@@ -23,9 +26,11 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const fmtDate = ymd => {
   if (!ymd) return '–';
   const [y, m, d] = ymd.split('-');
-  return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
+  return isKo() ? `${y}년 ${Number(m)}월 ${Number(d)}일` : `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
 };
-const fmtMonth = ymd => `${MONTHS[Number(ymd.slice(5, 7)) - 1]} ${ymd.slice(2, 4)}`;
+const fmtMonth = ymd => (isKo() ? `${ymd.slice(2, 4)}년 ${Number(ymd.slice(5, 7))}월` : `${MONTHS[Number(ymd.slice(5, 7)) - 1]} ${ymd.slice(2, 4)}`);
+// Cash rows arrive labelled 'Cash KRW' from the backend; the word is translated for display.
+const showLabel = label => (label.startsWith('Cash ') ? `${t('Cash')}${label.slice(4)}` : label);
 
 // % label at the outer end of a horizontal bar: left of a negative bar, right of a positive.
 function EndLabel({ x, y, width, height, value }) {
@@ -42,11 +47,11 @@ function EndLabel({ x, y, width, height, value }) {
 // Where a holding's path came from, in words.
 function sourceText(h, ccy) {
   const s = h.source;
-  if (s.kind === 'cash') return h.label.endsWith(ccy) ? 'Cash' : 'Exchange rate';
-  if (s.kind === 'own') return 'Own prices';
-  if (s.series === 'TBILL') return '3-month T-bills';
+  if (s.kind === 'cash') return h.label.endsWith(ccy) ? t('Cash') : t('Exchange rate');
+  if (s.kind === 'own') return t('Own prices');
+  if (s.series === 'TBILL') return t('3-month T-bills');
   const beta = s.beta != null ? ` × β ${fmtNum(s.beta)}` : '';
-  return s.kind === 'fallback' ? `S&P 500${beta}` : `${s.name}${beta}`;
+  return s.kind === 'fallback' ? `S&P 500${beta}` : `${t(s.name)}${beta}`;
 }
 
 function PortfolioTip({ active, payload, ccy }) {
@@ -55,9 +60,9 @@ function PortfolioTip({ active, payload, ccy }) {
   return (
     <div style={{ ...tooltipStyle, padding: '8px 10px', borderRadius: 6 }}>
       <div style={{ fontWeight: 600, marginBottom: 4 }}>{p.name}</div>
-      <div>Now: {fmtMoney(p.current, ccy)}</div>
-      <div className={cls(p.end_return)}>At the end: {fmtMoney(p.end_value, ccy)} ({fmtPct(p.end_return)})</div>
-      <div className={cls(p.max_drawdown)}>Worst fall: {fmtPct(p.max_drawdown)}</div>
+      <div>{t('Now')}: {fmtMoney(p.current, ccy)}</div>
+      <div className={cls(p.end_return)}>{t('At the end')}: {fmtMoney(p.end_value, ccy)} ({fmtPct(p.end_return)})</div>
+      <div className={cls(p.max_drawdown)}>{t('Worst fall')}: {fmtPct(p.max_drawdown)}</div>
       <div style={{ color: DIM }}>{fmtDate(p.dd_peak)} → {fmtDate(p.dd_trough)}</div>
     </div>
   );
@@ -84,12 +89,12 @@ function HoldingTip({ active, payload, ccy }) {
   const h = payload[0].payload;
   return (
     <div style={{ ...tooltipStyle, padding: '8px 10px', borderRadius: 6 }}>
-      <div style={{ fontWeight: 600 }}>{h.label}</div>
+      <div style={{ fontWeight: 600 }}>{showLabel(h.label)}</div>
       {h.display_name && h.display_name !== h.label && <div style={{ color: DIM, marginBottom: 4 }}>{h.display_name}</div>}
-      <div>Now: {fmtMoney(h.current, ccy)}</div>
-      <div className={cls(h.end_return)}>At the end: {fmtMoney(h.end_value, ccy)} ({fmtPct(h.end_return)})</div>
-      <div className={cls(h.worst_return)}>Lowest point: {fmtPct(h.worst_return)}</div>
-      <div style={{ color: DIM }}>Replayed from: {sourceText(h, ccy)}</div>
+      <div>{t('Now')}: {fmtMoney(h.current, ccy)}</div>
+      <div className={cls(h.end_return)}>{t('At the end')}: {fmtMoney(h.end_value, ccy)} ({fmtPct(h.end_return)})</div>
+      <div className={cls(h.worst_return)}>{t('Lowest point')}: {fmtPct(h.worst_return)}</div>
+      <div style={{ color: DIM }}>{t('Replayed from')}: {sourceText(h, ccy)}</div>
     </div>
   );
 }
@@ -167,21 +172,21 @@ export default function HistoricalReplay() {
       <div className="panel">
         {GROUPS.map(g => (
           <div key={g.kind} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-            <span style={{ ...dimLabel, width: 56 }}>{g.label}</span>
-            {events.filter(e => e.kind === g.kind).map(e => (
-              <button key={e.key} className={`btn ${eventKey === e.key ? '' : 'ghost'}`} title={e.note} onClick={() => setEventKey(e.key)}>
-                {e.label}
+            <span style={{ ...dimLabel, width: 56 }}>{t(g.label)}</span>
+            {events.filter(e => (e.group || e.kind) === g.kind).map(e => (
+              <button key={e.key} className={`btn ${eventKey === e.key ? '' : 'ghost'}`} title={t(e.note)} onClick={() => setEventKey(e.key)}>
+                {t(e.label)}{e.group && <span className={eventKey === e.key ? '' : e.kind === 'crash' ? 'down' : 'up'} style={{ opacity: 0.9 }}> {e.kind === 'crash' ? '↓' : '↑'}</span>}
               </button>
             ))}
           </div>
         ))}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-          <span style={dimLabel}>Replay with</span>
+          <span style={dimLabel}>{t('Replay with')}</span>
           {BASES.map(b => (
-            <button key={b.key} className={`btn ${basis === b.key ? '' : 'ghost'}`} title={b.hint} onClick={() => setBasis(b.key)}>{b.label}</button>
+            <button key={b.key} className={`btn ${basis === b.key ? '' : 'ghost'}`} title={t(b.hint)} onClick={() => setBasis(b.key)}>{t(b.label)}</button>
           ))}
-          <span style={{ ...dimLabel, marginLeft: 12 }}>Show in</span>
+          <span style={{ ...dimLabel, marginLeft: 12 }}>{t('Show in')}</span>
           {['USD', 'KRW'].map(c => (
             <button key={c} className={`btn ${ccy === c ? '' : 'ghost'}`} onClick={() => setCcy(c)}>{c}</button>
           ))}
@@ -189,13 +194,13 @@ export default function HistoricalReplay() {
 
         {ev && (
           <p style={{ margin: '14px 0 0', fontSize: 13, lineHeight: 1.6 }}>
-            <span style={{ fontWeight: 600 }}>{ev.label}</span>: {fmtDate(ev.first_date)} → {fmtDate(ev.last_date)}
-            <span style={{ color: 'var(--text-dim)' }}> · {data.dates.length} trading days · {ev.note}</span>
+            <span style={{ fontWeight: 600 }}>{t(ev.label)}</span>: {fmtDate(ev.first_date)} → {fmtDate(ev.last_date)}
+            <span style={{ color: 'var(--text-dim)' }}> · {t('{n} trading days', { n: data.dates.length })} · {t(ev.note)}</span>
             <br />
             {data.indexes.filter(i => i.change != null).map((i, k) => (
-              <span key={i.series}>{k > 0 && ', '}{i.name} <span className={cls(i.change)} style={{ fontWeight: 600 }}>{fmtPct(i.change)}</span></span>
+              <span key={i.series}>{k > 0 && ', '}{t(i.name)} <span className={cls(i.change)} style={{ fontWeight: 600 }}>{fmtPct(i.change)}</span></span>
             ))}
-            {data.won_vs_usd != null && <>; the won <span className={cls(data.won_vs_usd)} style={{ fontWeight: 600 }}>{fmtPct(data.won_vs_usd)}</span> against the dollar</>}
+            {data.won_vs_usd != null && <>; {t('the won')} <span className={cls(data.won_vs_usd)} style={{ fontWeight: 600 }}>{fmtPct(data.won_vs_usd)}</span> {t('against the dollar')}</>}
           </p>
         )}
       </div>
@@ -203,24 +208,24 @@ export default function HistoricalReplay() {
       {err && <div className="error" style={{ marginBottom: 16 }}>{err}</div>}
 
       {loading && !data ? (
-        <div className="panel"><div className="loading">Replaying…</div></div>
+        <div className="panel"><div className="loading">{t('Replaying…')}</div></div>
       ) : !data || results.length === 0 ? (
-        !err && <div className="panel"><div className="loading">No portfolios with priced holdings.</div></div>
+        !err && <div className="panel"><div className="loading">{t('No portfolios with priced holdings.')}</div></div>
       ) : (
         <>
           {/* All portfolios: end result and worst fall */}
           <div className="panel" style={{ opacity: loading ? 0.6 : 1 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 12 }}>
-              <h2 style={{ margin: 0 }}>Portfolios through the {ev.kind === 'boom' ? 'boom' : 'crash'}</h2>
+              <h2 style={{ margin: 0 }}>{ev.kind === 'boom' ? t('Portfolios through the boom') : t('Portfolios through the crash')}</h2>
               <div style={{ fontSize: 13 }}>
-                {shown.length === results.length ? 'All portfolios' : `${shown.length} of ${results.length} portfolios`}: {fmtMoney(totals.current, ccy)} → <span style={{ fontWeight: 600 }}>{fmtMoney(totals.end, ccy)}</span>{' '}
+                {shown.length === results.length ? t('All portfolios') : t('{n} of {total} portfolios', { n: shown.length, total: results.length })}: {fmtMoney(totals.current, ccy)} → <span style={{ fontWeight: 600 }}>{fmtMoney(totals.end, ccy)}</span>{' '}
                 <span className={cls(totals.pct)}>({fmtMoney(totals.end - totals.current, ccy)}, {fmtPct(totals.pct)})</span>
               </div>
             </div>
             <PortfolioChips portfolios={results} hidden={hidden} setHidden={setHidden} />
 
             {shown.length === 0 ? (
-              <div className="loading">No portfolios selected. Pick one or more above.</div>
+              <div className="loading">{t('No portfolios selected. Pick one or more above.')}</div>
             ) : (
               <>
                 <div style={{ width: '100%', height: Math.max(180, shown.length * 58 + 60), marginTop: 12 }}>
@@ -235,11 +240,11 @@ export default function HistoricalReplay() {
                       <ReferenceLine x={0} stroke={DIM} />
                       <Tooltip content={<PortfolioTip ccy={ccy} />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
-                      <Bar dataKey="end_return" name="At the end" fill={ACCENT} radius={2} maxBarSize={18} style={{ cursor: 'pointer' }}>
+                      <Bar dataKey="end_return" name={t('At the end')} fill={ACCENT} radius={2} maxBarSize={18} style={{ cursor: 'pointer' }}>
                         {shown.map(p => <Cell key={p.id} fill={ACCENT} fillOpacity={selected?.id === p.id ? 1 : DIMMED_OPACITY + 0.2} />)}
                         <LabelList dataKey="end_return" content={EndLabel} />
                       </Bar>
-                      <Bar dataKey="max_drawdown" name="Worst fall along the way" fill={BASELINE} fillOpacity={0.55} radius={2} maxBarSize={18} style={{ cursor: 'pointer' }}>
+                      <Bar dataKey="max_drawdown" name={t('Worst fall along the way')} fill={BASELINE} fillOpacity={0.55} radius={2} maxBarSize={18} style={{ cursor: 'pointer' }}>
                         <LabelList dataKey="max_drawdown" content={EndLabel} />
                       </Bar>
                     </BarChart>
@@ -249,13 +254,13 @@ export default function HistoricalReplay() {
                 <table style={{ marginTop: 8 }}>
                   <thead>
                     <tr>
-                      <th>Portfolio</th>
-                      <th className="num">Now</th>
-                      <th className="num">At the end</th>
-                      <th className="num">Change</th>
+                      <th>{t('Portfolio')}</th>
+                      <th className="num">{t('Now')}</th>
+                      <th className="num">{t('At the end')}</th>
+                      <th className="num">{t('Change')}</th>
                       <th className="num">%</th>
-                      <th className="num" title="Largest fall from a high point to a later low point during the event">Worst fall</th>
-                      <th className="num">Lowest on</th>
+                      <th className="num" title={t('Largest fall from a high point to a later low point during the event')}>{t('Worst fall')}</th>
+                      <th className="num">{t('Lowest on')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -280,9 +285,9 @@ export default function HistoricalReplay() {
           {selected && (
             <div className="panel" style={{ opacity: loading ? 0.6 : 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 12 }}>
-                <h2 style={{ margin: 0 }}>Day by day</h2>
+                <h2 style={{ margin: 0 }}>{t('Day by day')}</h2>
                 <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
-                  <span style={{ color: ACCENT }}>{selected.name}</span>, others in grey · shaded: its worst fall ({fmtPct(selected.max_drawdown)})
+                  <span style={{ color: ACCENT }}>{selected.name}</span>{t(', others in grey · shaded: its worst fall ({pct})', { pct: fmtPct(selected.max_drawdown) })}
                 </div>
               </div>
               <div style={{ width: '100%', height: 300, marginTop: 12 }}>
@@ -310,7 +315,7 @@ export default function HistoricalReplay() {
           {selected && (
             <div className="panel" style={{ opacity: loading ? 0.6 : 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-                <h2 style={{ margin: 0 }}><Link to={`/portfolios/${selected.id}`}>{selected.name}</Link> by holding</h2>
+                <h2 style={{ margin: 0 }}><Link to={`/portfolios/${selected.id}`}>{selected.name}</Link> {t('by holding')}</h2>
                 <select value={selected.id} onChange={e => setSelectedId(Number(e.target.value))} style={{ ...inputStyle, width: 'auto' }}>
                   {shown.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
@@ -320,11 +325,11 @@ export default function HistoricalReplay() {
                   <BarChart data={selected.holdings} layout="vertical" margin={{ top: 4, right: 70, left: 10, bottom: 4 }} barGap={1}>
                     <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" horizontal={false} />
                     <XAxis type="number" stroke={DIM} fontSize={11} tickFormatter={v => fmtCompact(v, ccy)} />
-                    <YAxis type="category" dataKey="label" stroke={DIM} fontSize={11} width={110} interval={0} />
+                    <YAxis type="category" dataKey="label" stroke={DIM} fontSize={11} width={110} interval={0} tickFormatter={showLabel} />
                     <Tooltip content={<HoldingTip ccy={ccy} />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="current" name="Now" fill={BASELINE} fillOpacity={BASELINE_OPACITY} radius={2} />
-                    <Bar dataKey="end_value" name="At the end" fill={ACCENT} radius={2}>
+                    <Bar dataKey="current" name={t('Now')} fill={BASELINE} fillOpacity={BASELINE_OPACITY} radius={2} />
+                    <Bar dataKey="end_value" name={t('At the end')} fill={ACCENT} radius={2}>
                       <LabelList dataKey="end_return" content={HoldingPctLabel} />
                     </Bar>
                   </BarChart>
@@ -334,25 +339,25 @@ export default function HistoricalReplay() {
               <table style={{ marginTop: 8 }}>
                 <thead>
                   <tr>
-                    <th>Holding</th>
-                    <th title="Whose prices this holding followed through the event, and its beta to them today">Replayed from</th>
-                    <th className="num">Now</th>
-                    <th className="num">At the end</th>
+                    <th>{t('Holding')}</th>
+                    <th title={t('Whose prices this holding followed through the event, and its beta to them today')}>{t('Replayed from')}</th>
+                    <th className="num">{t('Now')}</th>
+                    <th className="num">{t('At the end')}</th>
                     <th className="num">%</th>
-                    <th className="num" title="Its lowest point during the event, from the start">Lowest point</th>
+                    <th className="num" title={t('Its lowest point during the event, from the start')}>{t('Lowest point')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {selected.holdings.map(h => (
                     <tr key={h.label}>
                       <td>
-                        {h.is_cash ? h.label : <Link to={`/instruments/${encodeURIComponent(h.symbol)}`}>{h.label}</Link>}
+                        {h.is_cash ? showLabel(h.label) : <Link to={`/instruments/${encodeURIComponent(h.symbol)}`}>{h.label}</Link>}
                         {!h.is_cash && h.display_name && (
                           <div style={{ fontSize: 11, color: 'var(--text-dim)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.display_name}</div>
                         )}
                       </td>
                       <td style={{ color: h.source.kind === 'fallback' ? 'var(--amber)' : 'var(--text-dim)' }}
-                        title={h.source.kind === 'fallback' ? 'No proxy has prices this far back, so this follows the S&P 500 by its beta to it' : undefined}>
+                        title={h.source.kind === 'fallback' ? t('No proxy has prices this far back, so this follows the S&P 500 by its beta to it') : undefined}>
                         {sourceText(h, ccy)}{h.source.kind === 'fallback' && '*'}
                       </td>
                       <td className="num">{fmtMoney(h.current, ccy)}</td>
@@ -365,14 +370,32 @@ export default function HistoricalReplay() {
               </table>
               {fallbackCount > 0 && (
                 <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--amber)' }}>
-                  * {fallbackCount} holding{fallbackCount > 1 ? 's' : ''} with no proxy reaching back to {ev.first_date.slice(0, 4)} (daily KOSPI starts Dec 1996, gold futures Aug 2000,
-                  the Russell 2000 Sep 1987); {fallbackCount > 1 ? 'these follow' : 'it follows'} the S&P 500 by {fallbackCount > 1 ? 'their' : 'its'} beta to it instead.
+                  * {isKo()
+                    ? `${ev.first_date.slice(0, 4)}년까지 거슬러 가는 대용 지수가 없는 보유 종목 ${fallbackCount}개(KOSPI 일별 데이터는 1996년 12월, 금 선물은 2000년 8월, 비트코인은 2014년 9월, 러셀 2000은 1987년 9월부터)는 대신 S&P 500을 베타만큼 따라갑니다.`
+                    : <>{fallbackCount} holding{fallbackCount > 1 ? 's' : ''} with no proxy reaching back to {ev.first_date.slice(0, 4)} (daily KOSPI starts Dec 1996, gold futures Aug 2000,
+                  bitcoin Sep 2014, the Russell 2000 Sep 1987); {fallbackCount > 1 ? 'these follow' : 'it follows'} the S&P 500 by {fallbackCount > 1 ? 'their' : 'its'} beta to it instead.</>}
                 </p>
               )}
             </div>
           )}
 
           <div style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6, margin: '0 4px' }}>
+            {isKo() ? (
+              <>
+                <p style={{ margin: '0 0 6px' }}>
+                  <strong style={{ color: 'var(--text)' }}>재현 방법.</strong>{' '}
+                  현재 보유 종목을 현재 가치 그대로, 시장이 실제로 움직인 대로 하루씩 사건 기간을 통과시키며, 중간에 리밸런싱하지 않습니다.
+                  {basis === 'factor'
+                    ? ' 각 종목은 긴 기록을 가진 대용 지수(업종이나 시장 지수, 펀드는 추종 지수)를 최근 3년간의 베타만큼 따라갑니다. 이는 팩터 모델 방식(과거 팩터 변동 × 현재 민감도)으로, 1997년 상장 첫해 8배 오른 아마존처럼 기업의 초기 기록이 현재의 움직임을 대신하지 않습니다.'
+                    : ' 사건 기간 내내 거래되던 종목은 배당을 포함한 실제 과거 가격을 쓰고, 나머지는 대용 지수를 베타만큼 따라갑니다. 실제 가격은 정확하지만 오래전 사건이라면 당시의 회사 모습을 보여줍니다.'}
+                </p>
+                <p style={{ margin: 0 }}>
+                  가격은 매일의 실제 환율로 {ccy}로 환산하므로 원화 종목과 현금에는 사건 기간 동안의 원화 변동이 반영됩니다. 단기 국채 펀드는 당시의 국채 금리를 얻습니다.
+                  최악의 하락은 사건 기간 안에서 고점부터 이후 저점까지의 가장 큰 낙폭입니다. 과거 사건은 그때 이 포트폴리오가 어땠을지 보여줄 뿐 다음 사건의 예측이 아닙니다.
+                </p>
+              </>
+            ) : (
+            <>
             <p style={{ margin: '0 0 6px' }}>
               <strong style={{ color: 'var(--text)' }}>How this is replayed.</strong>{' '}
               Today's holdings, at today's values, are carried through the event day by day using what markets actually did, and nothing is rebalanced along the way.
@@ -384,6 +407,8 @@ export default function HistoricalReplay() {
               Prices are converted to {ccy} at each day's actual exchange rate, so won holdings and cash carry the won's moves through the event. T-bill funds earn the T-bill rate of the time.
               The worst fall is the largest drop from a high to a later low inside the event window. Past events show how this portfolio would have fared then, not a forecast of the next one.
             </p>
+            </>
+            )}
           </div>
         </>
       )}

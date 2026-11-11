@@ -52,3 +52,19 @@ test('missed: a run started long ago but never finished (killed mid-run)', () =>
 test('not missed: nothing scheduled within the lookback', () => {
   assert.equal(missedRun({ scheduledAt: null, now }), false);
 });
+
+test('refresh window: a month normally, back to the last price after a gap, five years when empty', async () => {
+  const { refreshDays, nextScheduledRun } = await import('../src/jobs/dailyPriceJob.js');
+  const today = '2026-10-26';
+  assert.equal(refreshDays({ latest: '2026-10-23', rows: 1200 }, today), 31);
+  // Off for six weeks: fetch back past the last stored close.
+  assert.equal(refreshDays({ latest: '2026-09-14', rows: 1200 }, today), 45);
+  // Never fetched, or only a few rows: the full backfill.
+  assert.equal(refreshDays({ latest: null, rows: 0 }, today), 1825);
+  assert.equal(refreshDays({ latest: '2026-10-23', rows: 5 }, today), 1825);
+  // A recent listing with a few months of history is refreshed normally.
+  assert.equal(refreshDays({ latest: '2026-10-23', rows: 93 }, today), 31);
+  // Next run: Saturday afternoon KST → Tuesday 06:30 KST.
+  const next = nextScheduledRun(matches, new Date('2026-10-24T06:00:00Z'));
+  assert.equal(next.toISOString(), '2026-10-26T21:30:00.000Z');
+});

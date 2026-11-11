@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router';
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { api } from '../api.js';
 import FundamentalsPanel from './FundamentalsPanel.jsx';
+import { t, isKo } from '../i18n.jsx';
 
 // Headline links come from third-party RSS feeds. Only absolute http(s) URLs become links;
 // a `javascript:` or `data:` URL (which React 18 would still render) is shown as plain text.
@@ -172,14 +173,14 @@ export default function InstrumentDetail() {
     }));
   }, [prices, bbPeriod]);
 
-  if (err) return <div className="error">Failed to load: {err}</div>;
-  if (!inst || !prices || !pred) return <div className="loading">Loading {symbol}…</div>;
+  if (err) return <div className="error">{t('Failed to load: {err}', { err })}</div>;
+  if (!inst || !prices || !pred) return <div className="loading">{t('Loading {name}…', { name: symbol })}</div>;
 
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <a href="#back" onClick={(e) => { e.preventDefault(); goBack(); }} style={{ cursor: 'pointer' }}>← Back</a>
+          <a href="#back" onClick={(e) => { e.preventDefault(); goBack(); }} style={{ cursor: 'pointer' }}>← {t('Back')}</a>
           <h1 style={{ margin: '8px 0 0' }}>{inst.symbol} <span style={{ color: 'var(--text-dim)', fontSize: 16 }}>{inst.display_name}</span></h1>
           <div style={{ marginTop: 4, fontSize: 13, color: 'var(--text-dim)' }}>
             {inst.market} · {inst.asset_class} · {inst.currency}
@@ -187,20 +188,20 @@ export default function InstrumentDetail() {
           </div>
         </div>
         <button className="btn" onClick={onRefresh} disabled={busy}>
-          {busy ? 'Refreshing…' : 'Refresh data'}
+          {busy ? t('Refreshing…') : t('Refresh data')}
         </button>
       </div>
 
       <div className="grid-4">
-        <Metric label="Latest Close" value={`${fmtNum(inst.latest?.close_px ?? prices.prices?.at(-1)?.close_px)} ${inst.currency}`} />
-        <Metric label="5-day Prediction" value={fmtNum(pred.predicted_price)} sub={fmtPct(pred.predicted_return)} color={pred.predicted_return > 0 ? 'up' : 'down'} />
-        <Metric label="Confidence" value={fmtPct(pred.confidence, 0)} />
-        <Metric label="7d Sentiment" value={fmtNum(sentiment?.rolling_avg ?? 0)} sub={`${sentiment?.records?.length ?? 0} day(s)`} />
+        <Metric label={t('Latest Close')} value={`${fmtNum(inst.latest?.close_px ?? prices.prices?.at(-1)?.close_px)} ${inst.currency}`} />
+        <Metric label={t('5-day Prediction')} value={fmtNum(pred.predicted_price)} sub={fmtPct(pred.predicted_return)} color={pred.predicted_return > 0 ? 'up' : 'down'} />
+        <Metric label={t('Confidence')} value={fmtPct(pred.confidence, 0)} />
+        <Metric label={t('7d Sentiment')} value={fmtNum(sentiment?.rolling_avg ?? 0)} sub={t('{n} day(s)', { n: sentiment?.records?.length ?? 0 })} />
       </div>
 
       <div className="panel">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
-          <h2 style={{ margin: 0 }}>Price ({days === MAX_DAYS ? 'all history' : `${days} days`})</h2>
+          <h2 style={{ margin: 0 }}>{t('Price ({period})', { period: days === MAX_DAYS ? t('all history') : t('{n} days', { n: days }) })}</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {PRESETS.map(p => (
               <button
@@ -208,7 +209,7 @@ export default function InstrumentDetail() {
                 className={`btn ${days === p.days ? '' : 'ghost'}`}
                 onClick={() => { setDays(p.days); setDraft(String(p.days)); }}
               >
-                {p.label}
+                {t(p.label)}
               </button>
             ))}
             <input
@@ -229,8 +230,8 @@ export default function InstrumentDetail() {
                 fontVariantNumeric: 'tabular-nums',
               }}
             />
-            <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>days</span>
-            <button className="btn" onClick={applyDraft}>Apply</button>
+            <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{t('days')}</span>
+            <button className="btn" onClick={applyDraft}>{t('Apply')}</button>
           </div>
         </div>
 
@@ -261,7 +262,7 @@ export default function InstrumentDetail() {
           </div>
         </div>
         {chartData.length === 0 ? (
-          <div className="loading">No price data yet — run <code>npm run backfill</code> in the backend.</div>
+          <div className="loading">{t('No price data yet — run')} <code>npm run backfill</code> {t('in the backend.')}</div>
         ) : (
           <div style={{ width: '100%', height: 320 }}>
             <ResponsiveContainer>
@@ -271,7 +272,7 @@ export default function InstrumentDetail() {
                 <YAxis stroke="#9aa0a6" fontSize={11} domain={['auto', 'auto']} />
                 <Tooltip contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }} formatter={v => fmtNum(v)} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Line type="monotone" dataKey="close" name="Close" stroke="#4a9eff" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey="close" name={t('Close')} stroke="#4a9eff" dot={false} strokeWidth={2} />
                 {bbPeriod && (
                   <Line type="monotone" dataKey="bbUpper" name={`BB Upper (${bbPeriod})`} stroke="#6b7280" strokeDasharray="4 4" dot={false} strokeWidth={1} connectNulls />
                 )}
@@ -281,13 +282,32 @@ export default function InstrumentDetail() {
                 {INDICATOR_PERIODS.filter(p => emaOn[p]).map(p => (
                   <Line key={p} type="monotone" dataKey={`ema${p}`} name={`EMA ${p}`} stroke={EMA_COLORS[p]} dot={false} strokeWidth={1.5} connectNulls />
                 ))}
-                <ReferenceLine y={pred.predicted_price} stroke="#fbbf24" strokeDasharray="4 4" label={{ value: '5d target', fill: '#fbbf24', fontSize: 11, position: 'right' }} />
+                <ReferenceLine y={pred.predicted_price} stroke="#fbbf24" strokeDasharray="4 4" label={{ value: t('5d target'), fill: '#fbbf24', fontSize: 11, position: 'right' }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
         )}
 
         <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)', fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.6 }}>
+          {isKo() ? (
+            <>
+              <p style={{ margin: '0 0 8px' }}>
+                <strong style={{ color: 'var(--text)' }}>EMA (지수이동평균)</strong> — 과거 종가를 평균하되 최근 날에 더 큰 가중치(<em>k = 2/(N+1)</em>)를 주는 추세선으로,
+                단순 평균보다 빠르게 반응합니다. 짧은 기간은 가격에 바짝 붙어 단기 모멘텀을 보여주고, 긴 기간은 더 부드러워 큰 추세를 나타냅니다.
+                일반적으로 상승하는 EMA <em>위</em>의 가격은 상승 추세, 하락하는 EMA <em>아래</em>는 하락 추세입니다. <strong>20</strong>(약 1개월)은 단기,
+                <strong>50</strong>(약 1분기)은 중기, <strong>200</strong>(약 1년)은 기관들이 주시하는 장기 추세선입니다. 짧은 EMA가 긴 EMA를 위로 뚫으면
+                강세("골든 크로스"), 아래로 뚫으면 약세("데드 크로스") 신호입니다.
+              </p>
+              <p style={{ margin: 0 }}>
+                <strong style={{ color: 'var(--text)' }}>지수 볼린저 밴드</strong> — EMA(가운데 선)에 같은 기간 가격 표준편차의 {BB_K}배를 더하고 뺀 변동성 범위입니다.
+                시장 변동성이 커지면 밴드가 <em>넓어지고</em> 진정되면 <em>좁아집니다</em>. 가격은 대부분 밴드 안에 머물므로 <em>상단</em> 밴드에 닿으면
+                많이 오른 상태, <em>하단</em> 밴드는 많이 내린 상태입니다 — 다만 강한 추세에서는 가격이 밴드를 따라 움직일 수 있어 밴드 접촉이
+                자동 매수/매도 신호는 아닙니다. 밴드가 아주 좁아지는 <strong>스퀴즈</strong>는 큰 움직임의 전조인 경우가 많습니다. EMA를 중심선으로 쓰면
+                전통적인 SMA 기반 밴드보다 빠르게 반응합니다.
+              </p>
+            </>
+          ) : (
+          <>
           <p style={{ margin: '0 0 8px' }}>
             <strong style={{ color: 'var(--text)' }}>EMA (Exponential Moving Average)</strong> — a trend line that averages
             past closing prices while weighting recent days more heavily (weight <em>k = 2/(N+1)</em>), so it reacts
@@ -306,6 +326,8 @@ export default function InstrumentDetail() {
             not automatic buy/sell signals. A <strong>squeeze</strong> (bands pinching very tight) often precedes a large
             move. Using the EMA as the center makes the band react more quickly than the classic SMA-based version.
           </p>
+          </>
+          )}
         </div>
       </div>
 
@@ -315,9 +337,9 @@ export default function InstrumentDetail() {
 
       <div className="grid-2">
         <div className="panel">
-          <h2>Prediction Factors</h2>
+          <h2>{t('Prediction Factors')}</h2>
           <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 0 }}>
-            Each factor produces a signal in [-1, +1]. Weights: trend 30%, momentum 25%, sentiment 25%, value 20%.
+            {t('Each factor produces a signal in [-1, +1]. Weights: trend 30%, momentum 25%, sentiment 25%, value 20%.')}
           </p>
           <FactorBar label="Trend (SMA)"  value={pred.trend_signal     ?? pred.signals?.trend} />
           <FactorBar label="Momentum"     value={pred.momentum_signal  ?? pred.signals?.momentum} />
@@ -326,14 +348,14 @@ export default function InstrumentDetail() {
           <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '12px 0' }} />
           <FactorBar label="Composite"    value={pred.composite_signal} bold />
           <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 8 }}>
-            Model: {pred.model_version || 'heuristic-v1'} · {pred.horizon_days || 5}-day horizon
+            {t('Model: {model} · {n}-day horizon', { model: pred.model_version || 'heuristic-v1', n: pred.horizon_days || 5 })}
           </div>
         </div>
 
         <div className="panel">
-          <h2>Recent Headlines</h2>
+          <h2>{t('Recent Headlines')}</h2>
           {(sentiment?.records?.[0]?.headlines_json?.length ?? 0) === 0 ? (
-            <div className="loading">No headlines yet. Try Refresh.</div>
+            <div className="loading">{t('No headlines yet. Try Refresh.')}</div>
           ) : (
             <ul className="headline-list">
               {(sentiment.records[0].headlines_json || []).slice(0, 8).map((h, i) => (
@@ -357,7 +379,7 @@ export default function InstrumentDetail() {
 function Metric({ label, value, sub, color }) {
   return (
     <div className="panel">
-      <div className="metric-label">{label}</div>
+      <div className="metric-label">{t(label)}</div>
       <div className={`metric ${color || ''}`}>{value}</div>
       {sub ? <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>{sub}</div> : null}
     </div>
@@ -368,7 +390,7 @@ function Metric({ label, value, sub, color }) {
 function Stat({ label, value, color, title }) {
   return (
     <div title={title}>
-      <div className="metric-label">{label}</div>
+      <div className="metric-label">{t(label)}</div>
       <div className={`metric ${color || ''}`} style={{ fontSize: 20 }}>{value}</div>
     </div>
   );
@@ -384,10 +406,10 @@ function RiskPanel({ stats, days, rf, setRf }) {
     <div className="panel">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <h2 style={{ margin: 0 }}>
-          Risk &amp; Return <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>({days} days{c?.benchmark_name ? ` · vs ${c.benchmark_name}` : ''})</span>
+          {t('Risk & Return')} <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>({t('{n} days', { n: days })}{c?.benchmark_name ? ` · ${t('vs {name}', { name: c.benchmark_name })}` : ''})</span>
         </h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>Risk-free</span>
+          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{t('Risk-free')}</span>
           <input
             type="number" step={0.5} min={0} max={20}
             value={(rf * 100).toString()}
@@ -399,23 +421,39 @@ function RiskPanel({ stats, days, rf, setRf }) {
       </div>
 
       {!stats ? (
-        <div className="loading">Computing…</div>
+        <div className="loading">{t('Computing…')}</div>
       ) : !s ? (
-        <div className="loading">Not enough price history for this window.</div>
+        <div className="loading">{t('Not enough price history for this window.')}</div>
       ) : (
         <>
           <div className="grid-4" style={{ marginTop: 16, rowGap: 16 }}>
-            <Stat label="Return (ann.)" value={fmtPct(s.cagr)} color={sign(s.cagr)} title="Realized annualized return (CAGR)" />
-            <Stat label="Volatility" value={fmtPct(s.vol)} title="Annualized standard deviation of daily returns" />
-            <Stat label="Downside Dev" value={fmtPct(s.downside_dev)} title="Annualized downside deviation — only returns below the risk-free MAR count" />
-            <Stat label="Max Drawdown" value={fmtPct(s.max_drawdown)} color="down" title="Worst peak-to-trough decline over the window" />
-            <Stat label="Sharpe" value={fmtNum(s.sharpe)} color={sign(s.sharpe)} title="(Ann. mean return − rf) / volatility" />
-            <Stat label="Sortino" value={fmtNum(s.sortino)} color={sign(s.sortino)} title="(Ann. mean return − rf) / downside deviation" />
-            <Stat label="Beta" value={fmtNum(c?.beta)} title={`Sensitivity to ${c?.benchmark_name || 'the market'} (1 = moves with it)`} />
-            <Stat label="Alpha (ann.)" value={fmtPct(c?.alpha)} color={sign(c?.alpha)} title={`Jensen's alpha vs ${c?.benchmark_name || 'the market'} — excess return CAPM can't explain`} />
+            <Stat label="Return (ann.)" value={fmtPct(s.cagr)} color={sign(s.cagr)} title={t('Realized annualized return (CAGR)')} />
+            <Stat label="Volatility" value={fmtPct(s.vol)} title={t('Annualized standard deviation of daily returns')} />
+            <Stat label="Downside Dev" value={fmtPct(s.downside_dev)} title={t('Annualized downside deviation — only returns below the risk-free MAR count')} />
+            <Stat label="Max Drawdown" value={fmtPct(s.max_drawdown)} color="down" title={t('Worst peak-to-trough decline over the window')} />
+            <Stat label="Sharpe" value={fmtNum(s.sharpe)} color={sign(s.sharpe)} title={t('(Ann. mean return − rf) / volatility')} />
+            <Stat label="Sortino" value={fmtNum(s.sortino)} color={sign(s.sortino)} title={t('(Ann. mean return − rf) / downside deviation')} />
+            <Stat label="Beta" value={fmtNum(c?.beta)} title={t('Sensitivity to {name} (1 = moves with it)', { name: c?.benchmark_name || t('the market') })} />
+            <Stat label="Alpha (ann.)" value={fmtPct(c?.alpha)} color={sign(c?.alpha)} title={t("Jensen's alpha vs {name} — excess return CAPM can't explain", { name: c?.benchmark_name || t('the market') })} />
           </div>
 
           <div style={{ marginTop: 14, fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6 }}>
+            {isKo() ? (
+              <>
+                <p style={{ margin: '0 0 6px' }}>
+                  <strong style={{ color: 'var(--text)' }}>변동성</strong>은 전체 출렁임(일간 수익률의 연환산 σ)이고, <strong style={{ color: 'var(--text)' }}>하방 편차</strong>는 무위험 목표보다 낮은 손실만 셉니다.
+                  <strong style={{ color: 'var(--text)' }}> 샤프</strong> = 전체 위험 1단위당 수익, <strong style={{ color: 'var(--text)' }}>소르티노</strong> = 하방 위험 1단위당 수익(높을수록 좋음, 1 초과 양호, 2 초과 우수).
+                  <strong style={{ color: 'var(--text)' }}> 최대 낙폭</strong>은 고점 대비 최악의 하락입니다.
+                </p>
+                <p style={{ margin: 0 }}>
+                  <strong style={{ color: 'var(--text)' }}>베타</strong>는 자산이 {c?.benchmark_name || '시장'}과 얼마나 함께 움직이는지 나타냅니다:
+                  {' '}1 = 같이 움직임, 1 초과 = 더 크게, 1 미만 = 덜, 음수 = 반대로 움직임.
+                  <strong style={{ color: 'var(--text)' }}> 알파</strong>는 베타로 예측되는 수준을 넘는 연환산 초과 수익입니다 — 양수는 시장 위험 대비 초과 성과, 음수는 미달입니다.
+                  {c?.r2 != null && <> 벤치마크가 이 자산 움직임의 <strong style={{ color: 'var(--text)' }}>{fmtPct(c.r2, 0)}</strong>를 설명합니다(R²).</>}
+                </p>
+              </>
+            ) : (
+            <>
             <p style={{ margin: '0 0 6px' }}>
               <strong style={{ color: 'var(--text)' }}>Volatility</strong> is total bumpiness (annualized σ of daily returns);
               <strong style={{ color: 'var(--text)' }}> Downside Dev</strong> counts only losses below the risk-free target.
@@ -430,6 +468,8 @@ function RiskPanel({ stats, days, rf, setRf }) {
               positive alpha = outperformed its market risk, negative = underperformed.
               {c?.r2 != null && <> The benchmark explains <strong style={{ color: 'var(--text)' }}>{fmtPct(c.r2, 0)}</strong> of this asset's moves (R²).</>}
             </p>
+            </>
+            )}
           </div>
         </>
       )}
@@ -444,7 +484,7 @@ function FactorBar({ label, value, bold }) {
   const color = v >= 0 ? 'var(--green)' : 'var(--red)';
   return (
     <div className="factor-row" style={{ fontWeight: bold ? 600 : 400 }}>
-      <div className="label">{label}</div>
+      <div className="label">{t(label)}</div>
       <div className="bar-bg">
         <div className="bar" style={{ left, width: `${width}%`, background: color }} />
       </div>
