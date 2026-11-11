@@ -267,7 +267,7 @@ export default function Projection() {
         <>
           <div className="panel">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 12 }}>
-              <h2 style={{ margin: 0 }}>{t('Portfolio projection')}</h2>
+              <h2 style={{ margin: 0 }}>{t('Retirement Simulator')}</h2>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span style={dimLabel}>{t('Show in')}</span>
                 {['KRW', 'USD'].map(c => (

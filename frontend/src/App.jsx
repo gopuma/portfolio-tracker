@@ -1,4 +1,4 @@
-import { NavLink, Route, Routes } from 'react-router';
+import { Navigate, NavLink, Route, Routes } from 'react-router';
 import PortfolioOverview from './components/PortfolioOverview.jsx';
 import InstrumentDetail from './components/InstrumentDetail.jsx';
 import PortfolioList from './components/PortfolioList.jsx';
@@ -27,8 +27,8 @@ export default function App() {
             <NavLink to="/stress" className={linkClass}>
               {t('Stress Test')}
             </NavLink>
-            <NavLink to="/projection" className={linkClass}>
-              {t('Projection')}
+            <NavLink to="/retirement" className={linkClass}>
+              {t('Retirement Simulator')}
             </NavLink>
             <NavLink to="/research" className={linkClass}>
               {t('Research')}
@@ -50,7 +50,9 @@ export default function App() {
         <Route path="/portfolios" element={<PortfolioList />} />
         <Route path="/portfolios/:id" element={<PortfolioDetail />} />
         <Route path="/stress" element={<StressTest />} />
-        <Route path="/projection" element={<Projection />} />
+        <Route path="/retirement" element={<Projection />} />
+        {/* The page's old address, kept so bookmarks still work. */}
+        <Route path="/projection" element={<Navigate to="/retirement" replace />} />
         <Route path="/research" element={<Research />} />
         <Route path="/predictions" element={<PredictionsPage />} />
         <Route path="/audit" element={<AuditPage />} />
