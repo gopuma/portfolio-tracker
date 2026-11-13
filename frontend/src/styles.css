@@ -9,6 +9,24 @@
   --green: #34d399;
   --red: #f87171;
   --amber: #fbbf24;
+  --hover: rgba(255,255,255,0.04);
+  color-scheme: dark;
+}
+
+/* Light theme (theme.jsx sets data-theme on <html>). Same names, lighter page. */
+:root[data-theme="light"] {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --panel-2: #eef0f3;
+  --border: #dde1e6;
+  --text: #1d2228;
+  --text-dim: #5d6773;
+  --accent: #1f6feb;
+  --green: #12855a;
+  --red: #cf3a3f;
+  --amber: #b26a00;
+  --hover: rgba(0,0,0,0.04);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -135,8 +153,50 @@ tr:hover td { background: var(--panel-2); }
 .mh-band { position: absolute; top: 0; bottom: 0; }
 .mh-band.regular { background: var(--green); opacity: .75; }
 .mh-band.pre, .mh-band.post { background: var(--amber); opacity: .35; }
+.mh-band.post-late { background: var(--amber); opacity: .12; }
 .mh-now { position: absolute; top: -3px; width: 2px; height: 10px; margin-left: -1px; background: var(--text); border-radius: 1px; }
 .mh-ticks { position: relative; height: 14px; margin-top: 3px; font-size: 10px; color: var(--text-dim); opacity: .7; font-variant-numeric: tabular-nums; }
 .mh-ticks span { position: absolute; transform: translateX(-50%); }
 .mh-ticks span:first-child { transform: none; }
 .mh-ticks span:last-child { transform: translateX(-100%); }
+
+/* Year-end review on the portfolio page (YearReview), set like the review doc: a document
+   column with a title, byline, sentence-case section headings, bordered tables and bullets. */
+.doc-review { padding: 22px 28px 28px; }
+.dr-controls { display: flex; gap: 8px; justify-content: flex-end; align-items: center; flex-wrap: wrap; }
+.dr-chip { padding: 3px 10px; font-size: 12px; }
+.dr-year { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; font-size: 13px; }
+.doc-review h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); margin: 6px 0 4px; }
+.dr-byline { color: var(--text-dim); font-size: 14px; margin-top: 0; margin-bottom: 6px; }
+.doc-review h2 { font-size: 19px; font-weight: 650; color: var(--text); text-transform: none; letter-spacing: 0; margin: 30px 0 10px; }
+.doc-review section > h2 { margin-top: 30px; }
+.doc-review h3 { font-size: 15px; font-weight: 700; color: var(--text); margin: 18px 0 6px; }
+.doc-review p, .doc-review li { font-size: 15px; line-height: 1.65; color: var(--text); }
+.doc-review p { margin: 0 0 10px; }
+.doc-review ul { margin: 0 0 10px; padding-left: 22px; }
+.doc-review b { font-weight: 650; }
+.dr-dim, .doc-review p.dr-dim { color: var(--text-dim); font-size: 13px; }
+.dr-note { font-weight: 400; color: var(--text-dim); font-size: 14px; }
+.dr-table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; }
+.dr-table th, .dr-table td { padding: 8px 10px; border: 1px solid var(--border); font-size: 14px; line-height: 1.45; color: var(--text); text-align: left; vertical-align: top; }
+.dr-table th { font-weight: 600; background: var(--panel-2); text-transform: none; letter-spacing: 0; }
+.dr-table tr:hover td { background: transparent; }
+.dr-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dr-table .dr-strong td { font-weight: 700; }
+.dr-table td.up { color: var(--green); }
+.dr-table td.down { color: var(--red); }
+.dr-how { color: var(--text-dim) !important; font-size: 13px !important; }
+.yr-bars { display: flex; flex-direction: column; gap: 3px; margin: 8px 0; }
+.yr-bar-row { display: grid; grid-template-columns: 140px 1fr 80px; align-items: center; gap: 10px; font-size: 12px; }
+.yr-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.yr-track { position: relative; height: 14px; }
+.yr-track::before { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--border); }
+.yr-bar { position: absolute; top: 1px; bottom: 1px; border-radius: 2px; }
+.yr-bar.pos { background: var(--green); opacity: .6; }
+.yr-bar.neg { background: var(--red); opacity: .6; }
+.yr-val { text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 700px) {
+  .doc-review { padding: 16px; }
+  .dr-table { display: block; overflow-x: auto; }
+  .yr-bar-row { grid-template-columns: 80px 1fr 56px; }
+}

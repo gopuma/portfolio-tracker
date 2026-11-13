@@ -2,17 +2,17 @@
 // hypothetical shock and the historical replay), so both read as one page.
 import { t } from '../i18n.jsx';
 
-export const GREEN = '#34d399';
-export const RED = '#f87171';
-export const DIM = '#9aa0a6';
+export const GREEN = 'var(--green)';
+export const RED = 'var(--red)';
+export const DIM = 'var(--text-dim)';
 // Same roles as the other charts: the accent blue is the series being studied (the price
 // line, the FX line), neutral grey is the reference it's read against (like the value
 // chart's backfill band), and red/green only ever mark direction, on text.
-export const ACCENT = '#4a9eff';
-export const BASELINE = '#9aa0a6';
+export const ACCENT = 'var(--accent)';
+export const BASELINE = 'var(--text-dim)';
 export const BASELINE_OPACITY = 0.35;
 export const DIMMED_OPACITY = 0.35;
-export const tooltipStyle = { background: '#1a1f29', border: '1px solid #2d3441', fontSize: 12 };
+export const tooltipStyle = { background: 'var(--panel)', border: '1px solid var(--border)', fontSize: 12 };
 export const inputStyle = { width: 72, background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', padding: '6px 8px', fontSize: 13, fontVariantNumeric: 'tabular-nums' };
 export const dimLabel = { fontSize: 12, color: 'var(--text-dim)' };
 export const chipStyle = { padding: '3px 10px', fontSize: 12 };

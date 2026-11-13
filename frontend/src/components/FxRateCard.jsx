@@ -260,14 +260,14 @@ export default function FxRateCard({
         <div style={{ width: '100%', height: 300, marginTop: 12 }}>
           <ResponsiveContainer>
             <LineChart data={chartData}>
-              <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
-              <XAxis dataKey="date" stroke="#9aa0a6" fontSize={11} minTickGap={40} />
-              <YAxis stroke="#9aa0a6" fontSize={11} domain={['auto', 'auto']} tickFormatter={v => fmtNum(v, yDigits)} width={48} />
+              <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+              <XAxis dataKey="date" stroke="var(--text-dim)" fontSize={11} minTickGap={40} />
+              <YAxis stroke="var(--text-dim)" fontSize={11} domain={['auto', 'auto']} tickFormatter={v => fmtNum(v, yDigits)} width={48} />
               <Tooltip
-                contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }}
+                contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)' }}
                 formatter={v => [`${fmtNum(v)} ${pairShort}`, t('Rate')]}
               />
-              <Line type="monotone" dataKey="rate" stroke="#4a9eff" dot={false} strokeWidth={2} />
+              <Line type="monotone" dataKey="rate" stroke="var(--accent)" dot={false} strokeWidth={2} />
               {live?.price != null && (
                 // Real-time rate as a dashed horizontal line — distinct from the EOD close series.
                 <ReferenceLine

@@ -83,6 +83,7 @@ export const api = {
   lookup:        (symbol)                => get(`/instruments/lookup?symbol=${encodeURIComponent(symbol)}`),
   portfolios:    ()                      => get(`/portfolios`),
   portfolioById: (id)                    => get(`/portfolios/${id}`),
+  portfolioYtdProfit: (id, year)         => get(`/portfolios/${id}/ytd-profit${year ? `?year=${encodeURIComponent(year)}` : ''}`),
   // backfillFrom ('YYYY-MM-DD') prepends hypothetical periods from that date to the first
   // recorded trade, holding the opening position constant. Read-only: nothing is stored.
   portfolioValueHistory: (id, granularity, currency, backfillFrom, includeCash) => {

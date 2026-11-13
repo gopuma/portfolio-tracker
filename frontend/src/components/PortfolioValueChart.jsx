@@ -56,9 +56,9 @@ function minusMonths(ymd, n) {
 // value, which is always the chart's display currency.
 const prettySym = s => (typeof s === 'string' && s.startsWith('CASH:') ? t('Cash held in {ccy}', { ccy: s.slice(5) }) : s);
 
-const GREEN = '#34d399';
-const RED = '#f87171';
-const DIM = '#9aa0a6';
+const GREEN = 'var(--green)';
+const RED = 'var(--red)';
+const DIM = 'var(--text-dim)';
 // The FX overlay reads as an annotation, not another holding — kept off the stack palette.
 const FX_COLOR = '#e8b64c';
 // Distinct stack colors; cycles if a portfolio has more holdings than colors.
@@ -177,7 +177,7 @@ function Row({ s, ccy, hoverKey, compact }) {
       </span>
       <span
         style={{
-          color: '#cbd2da', flex: 1, minWidth: 0, fontWeight: on ? 700 : 400,
+          color: 'var(--text-dim)', flex: 1, minWidth: 0, fontWeight: on ? 700 : 400,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}
       >
@@ -188,7 +188,7 @@ function Row({ s, ccy, hoverKey, compact }) {
       {!compact && s.native != null && ccyOf !== ccy && (
         <span style={{ color: DIM, fontSize: 11, flexShrink: 0 }}>{fmtMoney(s.native, ccyOf)} →</span>
       )}
-      <span style={{ color: '#e6e6e6', fontWeight: on ? 700 : 400, flexShrink: 0 }}>{fmtMoney(s.value, ccy)}</span>
+      <span style={{ color: 'var(--text)', fontWeight: on ? 700 : 400, flexShrink: 0 }}>{fmtMoney(s.value, ccy)}</span>
     </div>
   );
 }
@@ -232,7 +232,7 @@ function ChartTooltip({ active, payload, ccy, symbols, hoverKey, daily }) {
   // move the same way as the value move: up = green.
   const fxColor = row.fxPct == null ? DIM : row.fxPct > 0 ? GREEN : row.fxPct < 0 ? RED : DIM;
   return (
-    <div style={{ background: '#1a1f29', border: '1px solid #2d3441', borderRadius: 6, padding: '8px 10px', fontSize: 12 }}>
+    <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 12 }}>
       <div style={{ color: DIM, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
         {label}
         {/* Say it plainly on every hypothetical period — these were never traded. */}
@@ -242,7 +242,7 @@ function ChartTooltip({ active, payload, ccy, symbols, hoverKey, daily }) {
           </span>
         )}
       </div>
-      <div style={{ color: '#e6e6e6', fontWeight: 600, marginBottom: 2 }}>{t('Total')} {fmtMoney(row.total, ccy)}</div>
+      <div style={{ color: 'var(--text)', fontWeight: 600, marginBottom: 2 }}>{t('Total')} {fmtMoney(row.total, ccy)}</div>
       {row.mom != null && (
         <div style={{ color: momColor, marginBottom: 6 }}>
           {row.mom > 0 ? '▲' : row.mom < 0 ? '▼' : ''} {fmtMoney(Math.abs(row.mom), ccy)}
@@ -252,10 +252,10 @@ function ChartTooltip({ active, payload, ccy, symbols, hoverKey, daily }) {
       {/* The rate this period was valued at — part of the move whenever the display
           currency differs from a holding's own currency. */}
       {row.fx != null && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, paddingBottom: 6, borderBottom: '1px solid #2d3441' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
           <span style={{ width: 9, height: 9, borderRadius: 2, background: FX_COLOR, flexShrink: 0 }} />
-          <span style={{ color: '#cbd2da', flex: 1 }}>USD/KRW</span>
-          <span style={{ color: '#e6e6e6' }}>₩{fmtFx(row.fx)}</span>
+          <span style={{ color: 'var(--text-dim)', flex: 1 }}>USD/KRW</span>
+          <span style={{ color: 'var(--text)' }}>₩{fmtFx(row.fx)}</span>
           {row.fxPct != null && (
             <span style={{ color: fxColor }}>
               {row.fxPct > 0 ? '▲' : row.fxPct < 0 ? '▼' : ''}{fmtPct(Math.abs(row.fxPct))}
@@ -266,7 +266,7 @@ function ChartTooltip({ active, payload, ccy, symbols, hoverKey, daily }) {
       {/* Cash block: full width, since each row carries a native → converted pair. */}
       {cashRows.map(s => <Row key={s.symbol} s={s} ccy={ccy} hoverKey={hoverKey} />)}
       {cashRows.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, lineHeight: 1.45, paddingBottom: 4, marginBottom: 4, borderBottom: '1px solid #2d3441' }}>
+        <div style={{ display: 'flex', gap: 6, lineHeight: 1.45, paddingBottom: 4, marginBottom: 4, borderBottom: '1px solid var(--border)' }}>
           <span style={{ width: 9, flexShrink: 0 }} />
           <span style={{ color: DIM, flex: 1 }}>{t('Cash subtotal')}</span>
           <span style={{ color: DIM }}>{fmtMoney(cashTotal, ccy)}</span>
@@ -299,7 +299,7 @@ function makeTotalLabel(data) {
     }
     return (
       <g>
-        <text x={cx} y={y - 16} textAnchor="middle" fontSize={11} fontWeight={600} fill="#e6e6e6">{fmtCompact2(d.total)}</text>
+        <text x={cx} y={y - 16} textAnchor="middle" fontSize={11} fontWeight={600} fill="var(--text)">{fmtCompact2(d.total)}</text>
         {momText && <text x={cx} y={y - 4} textAnchor="middle" fontSize={10} fill={momColor}>{momText}</text>}
       </g>
     );
@@ -330,7 +330,7 @@ function makeFxLabel(data) {
     const cx = x + width / 2;
     const base = y + height; // baseline of the stack
     const pct = d.fxPct;
-    const pctColor = pct == null ? '#e6e6e6' : pct > 0 ? GREEN : pct < 0 ? RED : DIM;
+    const pctColor = pct == null ? 'var(--text)' : pct > 0 ? GREEN : pct < 0 ? RED : DIM;
     return (
       <g>
         <rect
@@ -712,18 +712,18 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
           <div style={{ width: '100%', height: 340 }}>
             <ResponsiveContainer>
               <ComposedChart data={visible} margin={{ top: 28, right: 12, left: 0, bottom: 0 }}>
-                <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
+                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
                 {/* Everything left of your first recorded trade is reconstructed, not lived. */}
                 {backfillBand && (
                   <ReferenceArea
                     x1={backfillBand.x1} x2={backfillBand.x2}
-                    fill="#9aa0a6" fillOpacity={0.09} stroke="none"
+                    fill="var(--text-dim)" fillOpacity={0.09} stroke="none"
                     label={{ value: t('backfilled'), position: 'insideTopLeft', fill: DIM, fontSize: 10 }}
                   />
                 )}
-                <XAxis dataKey={daily ? 'date' : 'month'} tickFormatter={daily ? fmtDay : fmtMonth} stroke="#9aa0a6" fontSize={11} minTickGap={20} />
+                <XAxis dataKey={daily ? 'date' : 'month'} tickFormatter={daily ? fmtDay : fmtMonth} stroke="var(--text-dim)" fontSize={11} minTickGap={20} />
                 <YAxis
-                  stroke="#9aa0a6" fontSize={11} width={52} tickFormatter={fmtCompact}
+                  stroke="var(--text-dim)" fontSize={11} width={52} tickFormatter={fmtCompact}
                   // Headroom so the on-bar total labels aren't clipped.
                   domain={[0, max => (max > 0 ? max * 1.18 : 1)]}
                 />
@@ -751,7 +751,7 @@ export default function PortfolioValueChart({ portfolioId, base, reloadKey }) {
                       // cash bands read as their own blocks rather than one mass. Skipped
                       // when the bars are too thin for it: a daily view over a couple of years
                       // is ~1px per bar, and a 1px stroke would paint the whole band dark.
-                      stroke="#1a1f29" strokeWidth={cashCcy && visible.length <= HAIRLINE_MAX_BARS ? 1 : 0}
+                      stroke="var(--panel)" strokeWidth={cashCcy && visible.length <= HAIRLINE_MAX_BARS ? 1 : 0}
                       onMouseEnter={() => setHoverKey(s.key)}
                       onMouseLeave={() => setHoverKey(null)}
                     >

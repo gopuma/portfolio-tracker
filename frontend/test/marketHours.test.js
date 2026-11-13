@@ -39,6 +39,8 @@ test('regular session in Seoul time: 23:30–06:00 in winter, 22:30–05:00 in s
   assert.equal(seoul(winter.regular[1]), '11/11 06:00');
   assert.equal(seoul(winter.pre[0]), '11/10 18:00');
   assert.equal(seoul(winter.post[1]), '11/11 10:00');
+  assert.equal(seoul(winter.postBroker[1]), '11/11 08:00'); // Kiwoom stops 2 hours after the close
+  assert.equal(seoul(nySession(ymd(2026, 7, 1)).postBroker[1]), '7/2 07:00');
   const summer = nySession(ymd(2026, 7, 1));
   assert.equal(seoul(summer.regular[0]), '7/1 22:30');
   assert.equal(seoul(summer.regular[1]), '7/2 05:00');
@@ -53,6 +55,8 @@ test('status while open, in pre-market, after hours and over a weekend', () => {
   const post = marketStatus(at('2026-11-10T22:00:00Z'));
   assert.equal(post.phase, 'post');
   assert.equal(post.nextOpen, at('2026-11-11T14:30:00Z'));
+  assert.equal(post.brokerOpen, true); // 17:00 New York
+  assert.equal(marketStatus(at('2026-11-10T23:30:00Z')).brokerOpen, false); // 18:30 New York
 
   const sat = marketStatus(at('2026-11-14T15:00:00Z'));
   assert.equal(sat.phase, 'closed');
@@ -71,7 +75,7 @@ test('a Seoul day shows the end of last night\'s session and the start of tonigh
   const day = seoulDayBands(at('2026-11-10T05:00:00Z')); // Tue 14:00 Seoul
   const hours = day.bands.map(b => [b.kind, +(b.from * 24).toFixed(2), +(b.to * 24).toFixed(2)]);
   assert.deepEqual(hours, [
-    ['regular', 0, 6], ['post', 6, 10], // Monday's New York session
+    ['regular', 0, 6], ['post', 6, 8], ['post-late', 8, 10], // Monday's New York session
     ['pre', 18, 23.5], ['regular', 23.5, 24], // Tuesday's
   ]);
   assert.equal(+(day.now * 24).toFixed(2), 14);

@@ -267,12 +267,12 @@ export default function InstrumentDetail() {
           <div style={{ width: '100%', height: 320 }}>
             <ResponsiveContainer>
               <LineChart data={chartData}>
-                <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
-                <XAxis dataKey="date" stroke="#9aa0a6" fontSize={11} minTickGap={40} />
-                <YAxis stroke="#9aa0a6" fontSize={11} domain={['auto', 'auto']} />
-                <Tooltip contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }} formatter={v => fmtNum(v)} />
+                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+                <XAxis dataKey="date" stroke="var(--text-dim)" fontSize={11} minTickGap={40} />
+                <YAxis stroke="var(--text-dim)" fontSize={11} domain={['auto', 'auto']} />
+                <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)' }} formatter={v => fmtNum(v)} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Line type="monotone" dataKey="close" name={t('Close')} stroke="#4a9eff" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey="close" name={t('Close')} stroke="var(--accent)" dot={false} strokeWidth={2} />
                 {bbPeriod && (
                   <Line type="monotone" dataKey="bbUpper" name={`BB Upper (${bbPeriod})`} stroke="#6b7280" strokeDasharray="4 4" dot={false} strokeWidth={1} connectNulls />
                 )}
@@ -282,7 +282,7 @@ export default function InstrumentDetail() {
                 {INDICATOR_PERIODS.filter(p => emaOn[p]).map(p => (
                   <Line key={p} type="monotone" dataKey={`ema${p}`} name={`EMA ${p}`} stroke={EMA_COLORS[p]} dot={false} strokeWidth={1.5} connectNulls />
                 ))}
-                <ReferenceLine y={pred.predicted_price} stroke="#fbbf24" strokeDasharray="4 4" label={{ value: t('5d target'), fill: '#fbbf24', fontSize: 11, position: 'right' }} />
+                <ReferenceLine y={pred.predicted_price} stroke="var(--amber)" strokeDasharray="4 4" label={{ value: t('5d target'), fill: 'var(--amber)', fontSize: 11, position: 'right' }} />
               </LineChart>
             </ResponsiveContainer>
           </div>

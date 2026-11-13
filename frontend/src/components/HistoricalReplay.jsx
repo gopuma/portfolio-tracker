@@ -232,13 +232,13 @@ export default function HistoricalReplay() {
                   <ResponsiveContainer>
                     <BarChart data={shown} layout="vertical" margin={{ top: 4, right: 40, left: 10, bottom: 4 }} barGap={2}
                       onClick={e => { const id = e?.activePayload?.[0]?.payload?.id; if (id != null) setSelectedId(id); }}>
-                      <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" horizontal={false} />
+                      <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" horizontal={false} />
                       <XAxis type="number" stroke={DIM} fontSize={11} domain={pctAxis.domain} ticks={pctAxis.ticks}
                         tickFormatter={v => `${(Math.round(v * 100) || 0).toLocaleString()}%`} />
                       <YAxis type="category" dataKey="id" stroke={DIM} width={120} interval={0}
                         tick={<PortfolioTick nameById={nameById} onOpen={id => navigate(`/portfolios/${id}`)} />} />
                       <ReferenceLine x={0} stroke={DIM} />
-                      <Tooltip content={<PortfolioTip ccy={ccy} />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                      <Tooltip content={<PortfolioTip ccy={ccy} />} cursor={{ fill: 'var(--hover)' }} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
                       <Bar dataKey="end_return" name={t('At the end')} fill={ACCENT} radius={2} maxBarSize={18} style={{ cursor: 'pointer' }}>
                         {shown.map(p => <Cell key={p.id} fill={ACCENT} fillOpacity={selected?.id === p.id ? 1 : DIMMED_OPACITY + 0.2} />)}
@@ -293,7 +293,7 @@ export default function HistoricalReplay() {
               <div style={{ width: '100%', height: 300, marginTop: 12 }}>
                 <ResponsiveContainer>
                   <LineChart data={pathRows} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
-                    <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
+                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
                     <XAxis dataKey="date" stroke={DIM} fontSize={11} minTickGap={48} tickFormatter={spanYears > 0.4 ? fmtMonth : (d => fmtDate(d).replace(/ \d{4}$/, ''))} />
                     <YAxis stroke={DIM} fontSize={11} width={52} tickFormatter={v => `${Math.round(v * 100)}%`} domain={['auto', 'auto']} />
                     <ReferenceLine y={0} stroke={DIM} />
@@ -323,10 +323,10 @@ export default function HistoricalReplay() {
               <div style={{ width: '100%', height: Math.max(180, selected.holdings.length * 34 + 60), marginTop: 12 }}>
                 <ResponsiveContainer>
                   <BarChart data={selected.holdings} layout="vertical" margin={{ top: 4, right: 70, left: 10, bottom: 4 }} barGap={1}>
-                    <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" horizontal={false} />
+                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" horizontal={false} />
                     <XAxis type="number" stroke={DIM} fontSize={11} tickFormatter={v => fmtCompact(v, ccy)} />
                     <YAxis type="category" dataKey="label" stroke={DIM} fontSize={11} width={110} interval={0} tickFormatter={showLabel} />
-                    <Tooltip content={<HoldingTip ccy={ccy} />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                    <Tooltip content={<HoldingTip ccy={ccy} />} cursor={{ fill: 'var(--hover)' }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     <Bar dataKey="current" name={t('Now')} fill={BASELINE} fillOpacity={BASELINE_OPACITY} radius={2} />
                     <Bar dataKey="end_value" name={t('At the end')} fill={ACCENT} radius={2}>

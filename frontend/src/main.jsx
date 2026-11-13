@@ -1,3 +1,4 @@
+import './theme.jsx'; // sets the light/dark theme before anything renders
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
