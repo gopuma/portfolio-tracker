@@ -267,7 +267,7 @@ export default function Projection() {
         <>
           <div className="panel">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 12 }}>
-              <h2 style={{ margin: 0 }}>{t('Retirement Simulator')}</h2>
+              <h2 style={{ margin: 0 }}>{t('Financial Independence')}</h2>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span style={dimLabel}>{t('Show in')}</span>
                 {['KRW', 'USD'].map(c => (
@@ -436,7 +436,7 @@ export default function Projection() {
                 <div style={{ width: '100%', height: 360, marginTop: 12 }}>
                   <ResponsiveContainer>
                     <ComposedChart data={chartRows} margin={{ top: 8, right: 16, left: 10, bottom: 4 }}>
-                      <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
+                      <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
                       <XAxis dataKey="year" stroke={DIM} fontSize={11} tickFormatter={y => t('{n}y', { n: y })} />
                       <YAxis stroke={DIM} fontSize={11} width={70} tickFormatter={v => fmtCompact(v, ccy)} />
                       <Tooltip content={<FanTip ccy={ccy} />} />

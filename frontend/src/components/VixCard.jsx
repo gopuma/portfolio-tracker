@@ -145,14 +145,14 @@ export default function VixCard({ reloadKey = 0 }) {
         <div style={{ width: '100%', height: 300, marginTop: 12 }}>
           <ResponsiveContainer>
             <LineChart data={chartData}>
-              <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
-              <XAxis dataKey="date" stroke="#9aa0a6" fontSize={11} minTickGap={40} />
-              <YAxis stroke="#9aa0a6" fontSize={11} domain={['auto', 'auto']} width={36} />
-              <Tooltip contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }} formatter={v => [fmtNum(v), 'VIX']} />
+              <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+              <XAxis dataKey="date" stroke="var(--text-dim)" fontSize={11} minTickGap={40} />
+              <YAxis stroke="var(--text-dim)" fontSize={11} domain={['auto', 'auto']} width={36} />
+              <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)' }} formatter={v => [fmtNum(v), 'VIX']} />
               {/* Regime guide lines: 20 = calm/elevated boundary, 30 = fear threshold */}
-              <ReferenceLine y={20} stroke="#fbbf24" strokeDasharray="4 4" label={{ value: '20', fill: '#fbbf24', fontSize: 10, position: 'right' }} />
-              <ReferenceLine y={30} stroke="#f87171" strokeDasharray="4 4" label={{ value: '30', fill: '#f87171', fontSize: 10, position: 'right' }} />
-              <Line type="monotone" dataKey="vix" stroke="#4a9eff" dot={false} strokeWidth={2} />
+              <ReferenceLine y={20} stroke="var(--amber)" strokeDasharray="4 4" label={{ value: '20', fill: 'var(--amber)', fontSize: 10, position: 'right' }} />
+              <ReferenceLine y={30} stroke="var(--red)" strokeDasharray="4 4" label={{ value: '30', fill: 'var(--red)', fontSize: 10, position: 'right' }} />
+              <Line type="monotone" dataKey="vix" stroke="var(--accent)" dot={false} strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
         </div>

@@ -4,6 +4,7 @@ import { ensureTrackedInstrument } from '../services/instrumentService.js';
 import { fetchQuotes } from '../services/priceFetcher.js';
 import { TRADING_DAYS, riskStats, toReturns, pearsonMaps } from '../services/stats.js';
 import { loadTransactions, transactionsToEvents, rederivePortfolioHoldings, findOversell } from '../services/ledgerService.js';
+import { yearReview } from '../services/periodProfit.js';
 import {
   HttpError, badRequest, parseId, parseTradeDate, parseShares, parsePrice, parseAccount, provided, todayLocal,
   MIN_PRICE, MAX_PRICE, MIN_SHARES,
@@ -595,6 +596,28 @@ portfoliosRouter.get('/:id', async (req, res, next) => {
       krw_per_usd: fx.krwPerUsd, krw_per_jpy: fx.krwPerJpy,
       holdings, totals,
     });
+  } catch (e) { next(e); }
+});
+
+/**
+ * Actual profit on the portfolio's securities for one year, the current one to date unless
+ * ?year=YYYY asks for another (see services/periodProfit.js yearReview):
+ * value now − value on Dec 31 − net purchases + dividends after withholding, each converted
+ * at its own date's exchange rate. Given in the base currency and in KRW, since the result
+ * depends on the currency it's measured in. { currencies: { USD: {...}, KRW: {...} }, checks,
+ * fx } (see ytdProfit), or { currencies: null } for a portfolio with no trades. The year-end
+ * review panel on the portfolio page reads all of it.
+ */
+portfoliosRouter.get('/:id/ytd-profit', async (req, res, next) => {
+  try {
+    const rows = await query(`SELECT id, base_currency FROM portfolios WHERE id = ?`, [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Portfolio not found' });
+    const base = rows[0].base_currency;
+    const currencies = base === 'KRW' ? ['KRW'] : [base, 'KRW'];
+    // ?year=YYYY for a past year's review; the current year by default (the YTD Profit cards).
+    const year = /^\d{4}$/.test(String(req.query.year || '')) ? Number(req.query.year) : undefined;
+    const review = await yearReview(rows[0].id, currencies, await getFxRates(), { year });
+    res.json(review || { currencies: null, checks: [], fx: null });
   } catch (e) { next(e); }
 });
 

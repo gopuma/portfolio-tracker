@@ -262,11 +262,11 @@ function IncomeChart({ periods, est, freq, ccy }) {
     <div style={{ width: '100%', height: 280, marginTop: 16 }}>
       <ResponsiveContainer>
         <ComposedChart data={rows} margin={{ top: 10, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
-          <XAxis dataKey="name" stroke="#9aa0a6" fontSize={11} />
-          <YAxis yAxisId="l" stroke="#9aa0a6" fontSize={11} width={52} tickFormatter={fmtC} />
+          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+          <XAxis dataKey="name" stroke="var(--text-dim)" fontSize={11} />
+          <YAxis yAxisId="l" stroke="var(--text-dim)" fontSize={11} width={52} tickFormatter={fmtC} />
           <YAxis yAxisId="r" orientation="right" stroke="#34d399" fontSize={11} width={40} tickFormatter={v => `${v.toFixed(0)}%`} />
-          <Tooltip contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }}
+          <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)' }}
             formatter={(val, name) => name === t('Net margin') ? [`${Number(val).toFixed(1)}%`, name] : [`${fmtC(val)} ${ccy}`, name]} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           <Bar yAxisId="l" dataKey="revenue" name={t('Revenue ({ccy})', { ccy })} radius={[2, 2, 0, 0]} maxBarSize={48}>

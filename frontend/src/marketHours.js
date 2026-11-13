@@ -12,6 +12,14 @@
 
 export const NY = 'America/New_York';
 export const SEOUL = 'Asia/Seoul';
+
+/**
+ * The user's broker takes after-hours orders for only part of the exchange's session:
+ * Kiwoom (영웅문) until 2 hours after the close, i.e. 18:00 New York time (06:00–08:00 Seoul
+ * in winter, 05:00–07:00 in summer), per third-party guides as of Nov 2026. Check the
+ * broker's own notice (공지사항) if this looks wrong; the timeline shades the rest paler.
+ */
+export const BROKER = { name: 'Kiwoom', postHours: 2 };
 const DAY_MS = 86_400_000;
 
 // ---- time zones ---------------------------------------------------------------------
@@ -130,8 +138,9 @@ export function nyDate(ms) {
 
 /**
  * One New York trading day. Closed days: { key, date, closed: 'weekend' | holiday name }.
- * Open days: [start, end] instants (ms) for pre, regular and post, plus the early-close
- * reason or null.
+ * Open days: [start, end] instants (ms) for pre, regular and post (the exchange's
+ * after-hours session), postBroker (the part the broker takes orders in), plus the
+ * early-close reason or null.
  */
 export function nySession(date) {
   const key = dateKey(date);
@@ -146,6 +155,7 @@ export function nySession(date) {
     pre: [at(4, 0), at(9, 30)],
     regular: [at(9, 30), at(close, 0)],
     post: [at(close, 0), at(close + 4, 0)],
+    postBroker: [at(close, 0), at(close + BROKER.postHours, 0)],
   };
 }
 
@@ -166,6 +176,7 @@ function sessionFrom(ms) {
  *   nextOpen the next regular open (null while open)
  *   closesAt the regular close (only while open)
  *   closedToday  the holiday name when New York's current date is a holiday, else null
+ *   brokerOpen   during after-hours: whether the broker still takes orders (see BROKER)
  */
 export function marketStatus(ms) {
   const today = nySession(nyDate(ms));
@@ -176,15 +187,20 @@ export function marketStatus(ms) {
   if (s && within(s.pre)) return { phase: 'pre', session: s, nextOpen: s.regular[0], closedToday };
   if (s && within(s.post)) {
     const next = sessionFrom(s.post[1]);
-    return { phase: 'post', session: s, nextOpen: next?.regular[0] ?? null, nextSession: next, closedToday };
+    return {
+      phase: 'post', session: s, nextOpen: next?.regular[0] ?? null, nextSession: next, closedToday,
+      brokerOpen: ms < s.postBroker[1],
+    };
   }
   return { phase: 'closed', session: s, nextOpen: s?.regular[0] ?? null, closedToday };
 }
 
 /**
  * The New York sessions as they fall across one Seoul calendar day, for a 24-hour
- * timeline. Each band: { kind: 'pre' | 'regular' | 'post', from, to } as fractions of the
- * day, plus its session. Also the holidays New York observes during the window.
+ * timeline. Each band: { kind, from, to, range } with from/to as fractions of the day and
+ * range the band's full [start, end] instants, plus its session. Kinds: 'pre', 'regular',
+ * 'post' (after-hours the broker takes orders in) and 'post-late' (the rest of the
+ * exchange's after-hours session). Also the holidays New York observes during the window.
  */
 export function seoulDayBands(ms) {
   const sp = zonedParts(ms, SEOUL);
@@ -203,9 +219,10 @@ export function seoulDayBands(ms) {
       }
       continue;
     }
-    for (const kind of ['pre', 'regular', 'post']) {
-      const a = Math.max(s[kind][0], start), b = Math.min(s[kind][1], end);
-      if (b > a) bands.push({ kind, from: (a - start) / span, to: (b - start) / span, session: s });
+    const parts = [['pre', s.pre], ['regular', s.regular], ['post', s.postBroker], ['post-late', [s.postBroker[1], s.post[1]]]];
+    for (const [kind, range] of parts) {
+      const a = Math.max(range[0], start), b = Math.min(range[1], end);
+      if (b > a) bands.push({ kind, from: (a - start) / span, to: (b - start) / span, range, session: s });
     }
   }
   return { start, end, now: (ms - start) / span, bands, holidays };

@@ -37,7 +37,7 @@ const HORIZONS = [{ label: '5-Day', days: 5 }, { label: '30-Day', days: 30 }];
 
 // Stable colors per model for the per-symbol chart.
 const MODEL_COLORS = {
-  'naive-rw-v1': '#9aa0a6',
+  'naive-rw-v1': 'var(--text-dim)',
   'drift-v1': '#4a9eff',
   'arima-v1': '#a855f7',
   'ets-v1': '#f59e0b',
@@ -273,12 +273,12 @@ function PerSymbol({ horizon, symbols, pageSymbol }) {
         <div style={{ width: '100%', height: 340, marginTop: 12 }}>
           <ResponsiveContainer>
             <LineChart data={chartData}>
-              <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
-              <XAxis dataKey="date" stroke="#9aa0a6" fontSize={11} minTickGap={40} />
-              <YAxis stroke="#9aa0a6" fontSize={11} domain={['auto', 'auto']} tickFormatter={v => fmtNum(v, 0)} width={56} />
-              <Tooltip contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }} formatter={v => fmtNum(v)} />
+              <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+              <XAxis dataKey="date" stroke="var(--text-dim)" fontSize={11} minTickGap={40} />
+              <YAxis stroke="var(--text-dim)" fontSize={11} domain={['auto', 'auto']} tickFormatter={v => fmtNum(v, 0)} width={56} />
+              <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)' }} formatter={v => fmtNum(v)} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="actual" name={t('Actual')} stroke="#ffffff" strokeWidth={2.5} dot={false} connectNulls />
+              <Line type="monotone" dataKey="actual" name={t('Actual')} stroke="var(--text)" strokeWidth={2.5} dot={false} connectNulls />
               {models.map(mv => (
                 <Line key={mv} type="monotone" dataKey={mv} name={mv} stroke={MODEL_COLORS[mv] || '#888'} strokeWidth={1.5} dot={false} connectNulls />
               ))}

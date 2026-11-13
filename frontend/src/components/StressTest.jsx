@@ -9,7 +9,7 @@ import {
 import HistoricalReplay from './HistoricalReplay.jsx';
 import { t, isKo } from '../i18n.jsx';
 
-const WHISKER = '#c9ced6';
+const WHISKER = 'var(--text-dim)';
 
 /**
  * One-standard-deviation band for a sum of holdings, as % changes from `current`. The sum's
@@ -380,12 +380,12 @@ function HypotheticalShock() {
               <ResponsiveContainer>
                 <BarChart data={shown} layout="vertical" margin={{ top: 4, right: 40, left: 10, bottom: 4 }}
                   onClick={e => { const id = e?.activePayload?.[0]?.payload?.id; if (id != null) setSelectedId(id); }}>
-                  <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" horizontal={false} />
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" horizontal={false} />
                   <XAxis type="number" dataKey="pct" stroke={DIM} fontSize={11} tickFormatter={v => `${(Math.round(v * 100) || 0).toLocaleString()}%`} domain={pctAxis.domain} ticks={pctAxis.ticks} />
                   <YAxis type="category" dataKey="id" stroke={DIM} width={120} interval={0}
                     tick={<PortfolioTick nameById={nameById} onOpen={id => navigate(`/portfolios/${id}`)} />} />
                   <ReferenceLine x={0} stroke={DIM} />
-                  <Tooltip content={<PortfolioTooltip ccy={ccy} />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                  <Tooltip content={<PortfolioTooltip ccy={ccy} />} cursor={{ fill: 'var(--hover)' }} />
                   <Bar dataKey="pct" fill={ACCENT} radius={2} maxBarSize={28} style={{ cursor: 'pointer' }}>
                     {shown.map(p => (
                       <Cell key={p.id} fill={ACCENT} fillOpacity={selected?.id === p.id ? 1 : DIMMED_OPACITY} />
@@ -439,10 +439,10 @@ function HypotheticalShock() {
               <div style={{ width: '100%', height: Math.max(180, selected.holdings.length * 34 + 60), marginTop: 12 }}>
                 <ResponsiveContainer>
                   <BarChart data={selected.holdings} layout="vertical" margin={{ top: 4, right: 70, left: 10, bottom: 4 }} barGap={1}>
-                    <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" horizontal={false} />
+                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" horizontal={false} />
                     <XAxis type="number" stroke={DIM} fontSize={11} tickFormatter={v => fmtCompact(v, ccy)} />
                     <YAxis type="category" dataKey="label" stroke={DIM} fontSize={11} width={110} interval={0} />
-                    <Tooltip content={<HoldingTooltip ccy={ccy} />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                    <Tooltip content={<HoldingTooltip ccy={ccy} />} cursor={{ fill: 'var(--hover)' }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     <Bar dataKey="current" name={t('Now')} fill={BASELINE} fillOpacity={BASELINE_OPACITY} radius={2} />
                     <Bar dataKey="stressed" name={change >= 0 ? t('After the rise') : t('After the fall')} fill={ACCENT} radius={2}>

@@ -166,16 +166,52 @@ export function quotesToBars(quotes, timeZone) {
     }));
 }
 
-/** Fetch `days` of daily bars for a symbol from Yahoo, dated in the exchange's timezone. Stores nothing. */
+/**
+ * Yahoo's dividend events → [{ ex_date: 'YYYY-MM-DD', amount }], dated in the exchange's
+ * timezone like the bars (an event's timestamp is the ex-date's session). Events without a
+ * positive amount are dropped; two on one date keep the later.
+ */
+export function dividendsFromEvents(events, timeZone) {
+  let fmt;
+  try { fmt = formatterFor(timeZone || 'UTC'); } catch { fmt = formatterFor('UTC'); }
+  const list = Array.isArray(events?.dividends) ? events.dividends : Object.values(events?.dividends || {});
+  const byDate = new Map();
+  for (const d of list) {
+    const amount = Number(d?.amount);
+    const when = d?.date instanceof Date ? d.date : new Date(typeof d?.date === 'number' && d.date < 1e12 ? d.date * 1000 : d?.date);
+    if (!(amount > 0) || Number.isNaN(when.getTime())) continue;
+    byDate.set(fmt.format(when), amount);
+  }
+  return [...byDate.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([ex_date, amount]) => ({ ex_date, amount }));
+}
+
+/**
+ * Fetch `days` of daily bars for a symbol from Yahoo, dated in the exchange's timezone,
+ * with the dividends that went ex in the same window. Stores nothing.
+ */
 export async function fetchDailyBars(symbol, days = 365) {
   const period2 = new Date();
   const period1 = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   await sleep(YF_CALL_DELAY_MS);
-  const result = await chartWithRetry(symbol, { period1, period2, interval: '1d' });
+  const result = await chartWithRetry(symbol, { period1, period2, interval: '1d', events: 'div|split' });
+  const timeZone = result?.meta?.exchangeTimezoneName || 'UTC';
   return {
-    timeZone: result?.meta?.exchangeTimezoneName || 'UTC',
-    bars: quotesToBars(result?.quotes, result?.meta?.exchangeTimezoneName),
+    timeZone,
+    bars: quotesToBars(result?.quotes, timeZone),
+    dividends: dividendsFromEvents(result?.events, timeZone),
   };
+}
+
+/** Upsert dividends for one instrument. */
+export async function storeDividends(q, instrumentId, dividends) {
+  for (const d of dividends) {
+    await q(
+      `INSERT INTO dividends (instrument_id, ex_date, amount) VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE amount = VALUES(amount)`,
+      [instrumentId, d.ex_date, d.amount]
+    );
+  }
+  return dividends.length;
 }
 
 /** Upsert bars for one instrument. `q` is a query executor (the pool's, or a transaction's). */
@@ -200,15 +236,21 @@ export async function storeBars(q, instrumentId, bars) {
  * @param {number} days  How many days back to fetch
  */
 export async function fetchAndStorePrices(instrument, days = 365) {
-  const { bars } = await fetchDailyBars(instrument.symbol, days);
+  const { bars, dividends } = await fetchDailyBars(instrument.symbol, days);
   if (bars.length === 0) {
     return { symbol: instrument.symbol, inserted: 0, note: 'No quotes returned' };
   }
   const inserted = await storeBars(query, instrument.id, bars);
+  // Best-effort: a dividend write failing must not fail the price refresh.
+  let dividendCount = 0;
+  try { dividendCount = await storeDividends(query, instrument.id, dividends); } catch (e) {
+    console.warn(`[priceFetcher] ${instrument.symbol} dividends not stored: ${e.message}`);
+  }
   return {
     symbol: instrument.symbol,
     fetched: bars.length,
     inserted_or_updated: inserted,
+    dividends: dividendCount,
     latest: bars[bars.length - 1].close_px,
   };
 }

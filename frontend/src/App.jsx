@@ -3,12 +3,14 @@ import PortfolioOverview from './components/PortfolioOverview.jsx';
 import InstrumentDetail from './components/InstrumentDetail.jsx';
 import PortfolioList from './components/PortfolioList.jsx';
 import PortfolioDetail from './components/PortfolioDetail.jsx';
+import PortfolioReview from './components/PortfolioReview.jsx';
 import PredictionsPage from './components/PredictionsPage.jsx';
 import AuditPage from './components/AuditPage.jsx';
 import Research from './components/Research.jsx';
 import StressTest from './components/StressTest.jsx';
 import Projection from './components/Projection.jsx';
 import { t, LanguageToggle } from './i18n.jsx';
+import { ThemeToggle } from './theme.jsx';
 
 export default function App() {
   const linkClass = ({ isActive }) => (isActive ? 'active' : '');
@@ -27,8 +29,8 @@ export default function App() {
             <NavLink to="/stress" className={linkClass}>
               {t('Stress Test')}
             </NavLink>
-            <NavLink to="/retirement" className={linkClass}>
-              {t('Retirement Simulator')}
+            <NavLink to="/financial-independence" className={linkClass}>
+              {t('Financial Independence')}
             </NavLink>
             <NavLink to="/research" className={linkClass}>
               {t('Research')}
@@ -41,6 +43,7 @@ export default function App() {
             </NavLink>
           </nav>
           <LanguageToggle />
+          <ThemeToggle />
         </div>
       </header>
 
@@ -49,10 +52,12 @@ export default function App() {
         <Route path="/instruments/:symbol" element={<InstrumentDetail />} />
         <Route path="/portfolios" element={<PortfolioList />} />
         <Route path="/portfolios/:id" element={<PortfolioDetail />} />
+        <Route path="/portfolios/:id/review" element={<PortfolioReview />} />
         <Route path="/stress" element={<StressTest />} />
-        <Route path="/retirement" element={<Projection />} />
-        {/* The page's old address, kept so bookmarks still work. */}
-        <Route path="/projection" element={<Navigate to="/retirement" replace />} />
+        <Route path="/financial-independence" element={<Projection />} />
+        {/* The page's old addresses, kept so bookmarks still work. */}
+        <Route path="/retirement" element={<Navigate to="/financial-independence" replace />} />
+        <Route path="/projection" element={<Navigate to="/financial-independence" replace />} />
         <Route path="/research" element={<Research />} />
         <Route path="/predictions" element={<PredictionsPage />} />
         <Route path="/audit" element={<AuditPage />} />

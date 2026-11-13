@@ -84,6 +84,18 @@ export default function PortfolioDetail() {
   const load = () => api.portfolioById(id).then(d => { setData(d); setVer(v => v + 1); }).catch(e => setErr(e.message));
   useEffect(() => { setLoading(true); load().finally(() => setLoading(false)); /* eslint-disable-next-line */ }, [id]);
 
+  // Actual year-to-date profit (purchase dates, exchange rates and dividends counted) and the
+  // year-end review built on it, refetched after every reload so a ledger edit shows up.
+  const [review, setReview] = useState(null);
+  const ytdProfit = review?.currencies || null;
+  useEffect(() => {
+    let cancelled = false;
+    api.portfolioYtdProfit(id)
+      .then(d => { if (!cancelled) setReview(d); })
+      .catch(() => { if (!cancelled) setReview(null); });
+    return () => { cancelled = true; };
+  }, [id, ver]);
+
   // Live intraday prices for the held securities. Called before the early returns below
   // so the hook order stays stable across loading/error renders. Cash has no symbol.
   const liveSymbols = (data?.holdings || []).filter(h => !isCash(h.symbol)).map(h => h.symbol);
@@ -292,17 +304,25 @@ export default function PortfolioDetail() {
               ? <> · JPY/KRW {fmtNum(data.krw_per_jpy)}</> : null}
           </div>
         </div>
-        <button
-          className="btn ghost"
-          onClick={deletePortfolio}
-          disabled={hasHoldings}
-          title={hasHoldings ? t('Remove all holdings first to delete this portfolio') : t('Delete this portfolio')}
-          style={hasHoldings
-            ? { marginLeft: 'auto', color: 'var(--text-dim)', borderColor: 'var(--border)', cursor: 'not-allowed' }
-            : { marginLeft: 'auto', color: 'var(--red)', borderColor: 'var(--red)' }}
-        >
-          {t('Delete portfolio')}
-        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          {/* The year-end review lives on its own page (PortfolioReview). */}
+          {review?.currencies && (
+            <Link className="btn" to={`/portfolios/${id}/review`} title={t('Read this portfolio’s year-end investment review')}>
+              {t('{year} review', { year: review.year })}
+            </Link>
+          )}
+          <button
+            className="btn ghost"
+            onClick={deletePortfolio}
+            disabled={hasHoldings}
+            title={hasHoldings ? t('Remove all holdings first to delete this portfolio') : t('Delete this portfolio')}
+            style={hasHoldings
+              ? { color: 'var(--text-dim)', borderColor: 'var(--border)', cursor: 'not-allowed' }
+              : { color: 'var(--red)', borderColor: 'var(--red)' }}
+          >
+            {t('Delete portfolio')}
+          </button>
+        </div>
       </div>
 
       {/* Says why the value figures differ from the stored ones, and that nothing is saved. */}
@@ -321,7 +341,7 @@ export default function PortfolioDetail() {
         </div>
       )}
 
-      <div className="grid-5">
+      <div className="grid-6">
         <Metric
           label="Market Value" value={fmtMoney(tot.market_value, ccy)}
           sub={hasCash && <SecCashSub securities={tot.securities_value} cash={tot.cash_value} ccy={ccy} fmt={fmtMoney} />}
@@ -338,11 +358,14 @@ export default function PortfolioDetail() {
         <Metric
           label="YTD" value={fmtPct(tot.return_ytd)} color={cls(tot.return_ytd)}
           sub={hasCash && <CashInclSub value={tot.return_ytd_with_cash} />}
+          caption={t('Today’s holdings, as if owned since Jan 1. Prices only.')}
+          title={t("Looks only at the shares you own today. Pretends you owned them since Jan 1. Ignores when you bought, exchange-rate changes and dividends. Answers: how good is my current mix?")}
         />
+        <YtdProfitCard p={ytdProfit?.[ccy]} ccy={ccy} reviewTo={review?.currencies ? `/portfolios/${id}/review` : null} year={review?.year} />
       </div>
 
       {showKrwCards && (
-        <div className="grid-3" style={{ marginTop: 16 }}>
+        <div className="grid-4" style={{ marginTop: 16 }}>
           <Metric
             label="Market Value (KRW)" value={fmtMoney(toKrw(tot.market_value), 'KRW')}
             sub={hasCash && <SecCashSub securities={toKrw(tot.securities_value)} cash={toKrw(tot.cash_value)} ccy="KRW" fmt={fmtMoney} />}
@@ -352,6 +375,7 @@ export default function PortfolioDetail() {
             sub={hasCash && <SecCashSub securities={toKrw(tot.securities_cost)} cash={toKrw(tot.cash_value)} ccy="KRW" fmt={fmtMoney} />}
           />
           <Metric label="Total Gain (KRW)" value={fmtMoney(toKrw(tot.gain), 'KRW')} color={cls(tot.gain)} />
+          <YtdProfitCard p={ytdProfit?.KRW} ccy="KRW" label="YTD Profit (KRW)" />
         </div>
       )}
 
@@ -557,13 +581,38 @@ export default function PortfolioDetail() {
   );
 }
 
-function Metric({ label, value, color, sub }) {
+function Metric({ label, value, color, sub, title, caption }) {
   return (
-    <div className="panel">
+    <div className="panel" title={title}>
       <div className="metric-label">{t(label)}</div>
       <div className={`metric ${color || ''}`} style={{ fontSize: 20 }}>{value}</div>
+      {caption && <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4, lineHeight: 1.4 }}>{caption}</div>}
       {sub && <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6, lineHeight: 1.5 }}>{sub}</div>}
     </div>
+  );
+}
+
+// What the securities actually made since Jan 1, in one currency (see the backend's
+// services/periodProfit.js): the money-weighted return, and how much came from prices
+// and the exchange rate versus dividends.
+function YtdProfitCard({ p, ccy, label = 'YTD Profit', reviewTo, year }) {
+  if (!p) return <Metric label={label} value="–" />;
+  return (
+    <Metric
+      label={label}
+      value={fmtMoney(p.profit, ccy)}
+      color={cls(p.profit)}
+      caption={t('Your money, from the day you bought. With exchange rates and dividends.')}
+      title={t('Counts each purchase from the day you bought it, at the price you paid. Includes exchange-rate changes and dividends after tax. Answers: how much did my money really make? The % is profit ÷ (Dec 31 value + purchases).')}
+      sub={
+        <>
+          <div><span className={cls(p.return)} style={{ fontSize: 13, fontWeight: 600 }}>{fmtPct(p.return)}</span> {t('on money invested')}</div>
+          <div>{t('Prices & FX')} {fmtMoney(p.price_and_fx, ccy)} · {t('Dividends')} {fmtMoney(p.dividends, ccy)}</div>
+          {p.missing?.length > 0 && <div style={{ color: 'var(--amber)' }}>{t('No price for: {list}', { list: p.missing.join(', ') })}</div>}
+          {reviewTo && <div style={{ marginTop: 6 }}><Link to={reviewTo}>{t('Read the {year} review →', { year })}</Link></div>}
+        </>
+      }
+    />
   );
 }
 

@@ -233,11 +233,11 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
           <div style={{ width: '100%', height: 420, marginTop: 12 }}>
             <ResponsiveContainer>
               <ComposedChart data={chartData}>
-                <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
-                <XAxis dataKey="date" stroke="#9aa0a6" fontSize={11} minTickGap={40} />
-                <YAxis stroke="#9aa0a6" fontSize={11} domain={priceAxis.domain} ticks={priceAxis.ticks} tickFormatter={v => fmtNum(v, 0)} width={64} />
+                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+                <XAxis dataKey="date" stroke="var(--text-dim)" fontSize={11} minTickGap={40} />
+                <YAxis stroke="var(--text-dim)" fontSize={11} domain={priceAxis.domain} ticks={priceAxis.ticks} tickFormatter={v => fmtNum(v, 0)} width={64} />
                 <Tooltip
-                  contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }}
+                  contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)' }}
                   formatter={(v, name) => [`${fmtNum(v, 0)} KRW/g`, name]}
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} verticalAlign="top" />
@@ -253,7 +253,7 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
                   endIndex={win ? win.endIndex : Math.max(0, chartData.length - 1)}
                   height={26}
                   stroke="#4a9eff"
-                  fill="#1a1f29"
+                  fill="var(--panel)"
                   travellerWidth={8}
                   tickFormatter={() => ''}
                   onChange={r => setWin(r.startIndex === 0 && r.endIndex === chartData.length - 1 ? null : r)}
@@ -276,14 +276,14 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
               <div style={{ width: '100%', height: 220, marginTop: 8 }}>
                 <ResponsiveContainer>
                   <LineChart data={premiumData}>
-                    <CartesianGrid stroke="#2d3441" strokeDasharray="3 3" />
-                    <XAxis dataKey="date" stroke="#9aa0a6" fontSize={11} minTickGap={40} />
-                    <YAxis stroke="#9aa0a6" fontSize={11} domain={premiumAxis.domain} ticks={premiumAxis.ticks} allowDataOverflow tickFormatter={v => fmtPct(v, 1)} width={64} />
+                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+                    <XAxis dataKey="date" stroke="var(--text-dim)" fontSize={11} minTickGap={40} />
+                    <YAxis stroke="var(--text-dim)" fontSize={11} domain={premiumAxis.domain} ticks={premiumAxis.ticks} allowDataOverflow tickFormatter={v => fmtPct(v, 1)} width={64} />
                     <Tooltip
-                      contentStyle={{ background: '#1a1f29', border: '1px solid #2d3441' }}
+                      contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)' }}
                       formatter={v => [fmtPct(v), t('KRX over international')]}
                     />
-                    <ReferenceLine y={0} stroke="#9aa0a6" />
+                    <ReferenceLine y={0} stroke="var(--text-dim)" />
                     <Line type="monotone" dataKey="premium" stroke={KRX_COLOR} dot={false} strokeWidth={1.5} />
                   </LineChart>
                 </ResponsiveContainer>

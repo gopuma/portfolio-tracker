@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { t, locale } from '../i18n.jsx';
-import { NY, SEOUL, zonedToUtc, marketStatus, seoulDayBands, nextClockChange } from '../marketHours.js';
+import { NY, SEOUL, BROKER, zonedToUtc, marketStatus, seoulDayBands, nextClockChange } from '../marketHours.js';
 
 /**
  * New York market hours on a Seoul clock, kept to two lines: the market's status with a
  * countdown and both clocks, then a thin 24-hour bar of today in Seoul with the sessions
- * drawn on it (hover a band for its times). All times come from marketHours.js; nothing
+ * drawn on it (hover a band for its times). After-hours past the broker's cutoff (BROKER in
+ * marketHours.js) is shaded paler: the market still trades then, but the broker doesn't. All times come from marketHours.js; nothing
  * is fetched.
  */
 
@@ -36,7 +37,7 @@ const PHASE = {
   post: { label: 'After-hours', color: 'var(--amber)' },
   closed: { label: 'Market closed', color: 'var(--text-dim)' },
 };
-const KIND = { pre: 'Pre-market', regular: 'Regular session', post: 'After-hours' };
+const KIND = { pre: 'Pre-market', regular: 'Regular session', post: 'After-hours', 'post-late': 'After-hours' };
 const TICKS = [0, 6, 12, 18, 24];
 
 /** Current time, refreshed every 15 seconds (the card shows minutes). */
@@ -68,6 +69,12 @@ export default function MarketHoursCard() {
       dur: duration(status.nextOpen - now), when: `${weekday(status.nextOpen)} ${hm(status.nextOpen)}`,
     });
   }
+  // During after-hours, whether the broker still takes orders (it stops before the exchange).
+  const brokerNote = status.phase === 'post'
+    ? status.brokerOpen
+      ? t('{broker} takes orders until {time}', { broker: t(BROKER.name), time: hm(s.postBroker[1]) })
+      : t('{broker} closed at {time}', { broker: t(BROKER.name), time: hm(s.postBroker[1]) })
+    : null;
   // Only on the rare days it applies: a New York holiday or a 13:00 early close.
   const note = status.closedToday
     ? t('New York is closed today: {name}', { name: t(status.closedToday) })
@@ -88,6 +95,7 @@ export default function MarketHoursCard() {
           {t(phase.label)}
         </span>
         {countdown && <span className="mh-dim">{countdown}</span>}
+        {brokerNote && <span className="mh-dim">· {brokerNote}</span>}
         {note && <span style={{ color: 'var(--amber)' }}>{note}</span>}
         <span className="mh-clocks">
           {t('Seoul')} <b>{hm(now)}</b>
@@ -102,7 +110,7 @@ export default function MarketHoursCard() {
               key={i}
               className={`mh-band ${b.kind}`}
               style={{ left: `${b.from * 100}%`, width: `${(b.to - b.from) * 100}%` }}
-              title={`${t(KIND[b.kind])} ${hm(b.session[b.kind][0])}–${hm(b.session[b.kind][1])} ${t('Seoul')}`}
+              title={`${t(KIND[b.kind])} ${hm(b.range[0])}–${hm(b.range[1])} ${t('Seoul')}${b.kind === 'post-late' ? ` · ${t("{broker} doesn't take orders then", { broker: t(BROKER.name) })}` : ''}`}
             />
           ))}
         </div>
