@@ -98,7 +98,7 @@ export default function YearReview({ portfolioId, portfolioName, base, initial, 
             <>
               <HowToRead />
               <MoneySources review={review} ccys={ccys} ccy={shown} />
-              <ProfitTable review={review} ccys={ccys} ccy={shown} base={base} ytd={review.current ? ytd : null} />
+              <ProfitTable review={review} ccys={ccys} ytd={review.current ? ytd : null} />
               <Drivers review={review} ccy={shown} />
               <Analysis review={review} ccy={shown} base={base} ccys={ccys} />
               <Checks checks={review.checks} />
@@ -130,27 +130,27 @@ function funding(r) {
   return { net, fromCash, fromDiv, outside, unspent: Math.max(0, cash - fromCash) };
 }
 
-/** The year's point in one sentence, chosen by how prices and the exchange rate moved it. */
+/**
+ * The year's point in one sentence: what the investments earned in their own markets (every
+ * exchange rate held at the start of the year), what the exchange rate added or took, and
+ * the total in the currency shown — plus the other currency's total when it has the other sign.
+ */
 function leadSentence(review, ccys, ccy, base) {
   const period = periodOf(review);
   const r = review.currencies[ccy];
-  if (ccys.length > 1) {
-    const a = review.currencies[base], b = review.currencies.KRW;
-    if (Math.sign(a.profit) !== Math.sign(b.profit)) {
-      return t('{period}: the investments made {a} in dollars but {b} in won. With exchange rates held at the start of the year, they made {f}.', {
-        period, a: result(a, base), b: result(b, 'KRW'), f: pct(b.fixed_fx.return),
-      });
-    }
+  const f = r.fixed_fx;
+  const vars = {
+    period, inv: `${signed(f.profit, ccy)} (${pct(f.return)})`, p: signed(f.price, ccy), d: signed(f.dividends, ccy),
+    fx: shortAbs(r.fx_effect, ccy), total: result(r, ccy),
+  };
+  let text = t(r.fx_effect >= 0
+    ? '{period}: the investments earned {inv} in their own markets: {p} from prices and {d} from dividends. The exchange rate added {fx}, for a total of {total}.'
+    : '{period}: the investments earned {inv} in their own markets: {p} from prices and {d} from dividends. The exchange rate cost {fx}, for a total of {total}.', vars);
+  const other = ccys.find(c => c !== ccy);
+  if (other && Math.sign(review.currencies[other].profit) !== Math.sign(r.profit)) {
+    text += ` ${t('Measured in {ccy}, the same year is {total}.', { ccy: other, total: result(review.currencies[other], other) })}`;
   }
-  const fxEffect = r.profit - r.fixed_fx.profit;
-  if (Math.abs(fxEffect) > Math.abs(r.fixed_fx.profit) && Math.abs(fxEffect) > 0.02 * r.invested) {
-    return t('{period}: the investments made {a}. The exchange rate moved the result more than prices did; with rates held at the start of the year, they made {f}.', {
-      period, a: result(r, ccy), f: pct(r.fixed_fx.return),
-    });
-  }
-  return t('{period}: the investments made {a}. Prices and exchange rates contributed {p}, and dividends {d}.', {
-    period, a: result(r, ccy), p: signed(r.price_and_fx, ccy), d: signed(r.dividends, ccy),
-  });
+  return text;
 }
 
 // ---- sections ---------------------------------------------------------------------------
@@ -158,8 +158,8 @@ function leadSentence(review, ccys, ccy, base) {
 function Summary({ review, ccys, ccy, base }) {
   const r = review.currencies[ccy];
   const rows = r.by_symbol || [];
-  const gains = rows.filter(x => x.profit > 0).slice(0, 3).map(x => x.symbol);
-  const losses = rows.filter(x => x.profit < 0).reverse().slice(0, 3).map(x => x.symbol);
+  const gains = rows.filter(x => x.investment > 0).slice(0, 3).map(x => x.symbol);
+  const losses = rows.filter(x => x.investment < 0).reverse().slice(0, 3).map(x => x.symbol);
   const f = funding(r);
   const items = [];
   if (f.net > 0) {
@@ -238,37 +238,32 @@ function MoneySources({ review, ccys, ccy }) {
   );
 }
 
-function ProfitTable({ review, ccys, ccy, base, ytd }) {
+function ProfitTable({ review, ccys, ytd }) {
   const prev = review.year - 1;
   const row = (label, get, render = fmt, extra) => (
     <tr className={extra}>
       <td>{label}</td>
       {ccys.map(c => {
         const v = get(review.currencies[c]);
-        return <td key={c} className={`num ${extra === 'dr-strong' || render === signed ? cls(typeof v === 'number' ? v : v?.n) : ''}`}>{render(v, c)}</td>;
+        const n = typeof v === 'number' ? v : v?.n;
+        return <td key={c} className={`num ${render !== fmt ? cls(n) : ''}`}>{render(v, c)}</td>;
       })}
     </tr>
   );
   const withPct = (v, c) => `${signed(v.n, c)} (${pct(v.p)})`;
-  // Dollar-priced versus won-priced holdings, in the base currency (dollars, for most).
-  const inBase = review.currencies[base] || review.currencies[ccy];
-  const baseCcy = review.currencies[base] ? base : ccy;
-  const groups = ['USD', 'KRW'].map(cur => {
-    const xs = (inBase.by_symbol || []).filter(x => x.currency === cur);
-    return { cur, xs, total: xs.reduce((s, x) => s + x.profit, 0) };
-  }).filter(g => g.xs.length);
-  const r = review.currencies[ccy];
-  const fxStart = review.fx?.usd_start;
-  const fixedLine = Math.abs(r.fixed_fx.return ?? 0) < 0.01
-    ? t('So the investment choices roughly broke even; the exchange rate decides whether the year looks like a gain or a loss.')
-    : r.fixed_fx.profit > 0
-      ? t('So before the exchange rate, the investments gained {v}.', { v: pct(r.fixed_fx.return) })
-      : t('So before the exchange rate, the investments lost {v}.', { v: pct(r.fixed_fx.return) });
+  const fx = review.fx;
+  const fxMove = fx?.usd_start && fx?.usd_end ? fx.usd_end / fx.usd_start - 1 : null;
+  const first = review.currencies[ccys[0]];
+  const conclusion = Math.abs(first.fixed_fx.return ?? 0) < 0.01
+    ? t('So the investments roughly broke even; the exchange rate decides whether the year looks like a gain or a loss.')
+    : first.fixed_fx.profit > 0
+      ? t('So the investments themselves gained {v}; the exchange rate is a separate effect on top.', { v: pct(first.fixed_fx.return) })
+      : t('So the investments themselves lost {v}; the exchange rate is a separate effect on top.', { v: pct(first.fixed_fx.return) });
   return (
     <section>
       <h2>{t('YTD and YTD Profit')}</h2>
       {ytd?.sec != null && (
-        <p>{t('The app’s YTD reads {ytd} ({cash} with cash): today’s holdings priced from Jan 1. What the money actually made is below.', { ytd: pct(ytd.sec), cash: pct(ytd.cash) })}</p>
+        <p>{t('The app’s YTD reads {ytd} ({cash} with cash): today’s holdings priced from Jan 1. What the money actually made is below, with the investment’s own result separated from the exchange rate.', { ytd: pct(ytd.sec), cash: pct(ytd.cash) })}</p>
       )}
       <table className="dr-table">
         <thead><tr><th>{periodOf(review)}</th>{ccys.map(c => <th key={c} className="num">{c}</th>)}</tr></thead>
@@ -276,56 +271,60 @@ function ProfitTable({ review, ccys, ccy, base, ytd }) {
           {row(t('Value on Dec 31, {prev}', { prev }), x => x.start_value)}
           {row(t('Bought, net of sales'), x => x.bought - x.sold)}
           {row(review.current ? t('Value now') : t('Value on Dec 31, {year}', { year: review.year }), x => x.end_value)}
-          {row(t('Price and exchange-rate change'), x => x.price_and_fx, signed)}
-          {row(t('Dividends after tax'), x => x.dividends, signed)}
-          {row(review.current ? t('YTD Profit') : t('Profit'), x => ({ n: x.profit, p: x.return }), withPct, 'dr-strong')}
+          <tr className="dr-subhead"><td colSpan={ccys.length + 1}>{t('Where the profit came from')}</td></tr>
+          {row(t('Price change'), x => x.fixed_fx.price, signed)}
+          {row(t('Dividends after tax'), x => x.fixed_fx.dividends, signed)}
+          {row(t('Investment profit'), x => ({ n: x.fixed_fx.profit, p: x.fixed_fx.return }), withPct, 'dr-strong')}
+          {row(t('Exchange-rate effect'), x => x.fx_effect, signed, 'dr-fx')}
+          {row(review.current ? t('Total profit (YTD Profit)') : t('Total profit'), x => ({ n: x.profit, p: x.return }), withPct, 'dr-strong dr-total')}
         </tbody>
       </table>
-      {groups.length > 1 && (
-        <p><b>{t('By currency of the holding.')}</b> {groups.map(g => t(g.cur === 'USD' ? 'Dollar holdings ({list}) made {v}.' : 'Won holdings ({list}) made {v}.', {
-          list: listOf(g.xs.slice(0, 7).map(x => x.symbol)) + (g.xs.length > 7 ? '…' : ''), v: short(g.total, baseCcy),
-        })).join(' ')}</p>
+      {fx?.usd_start && (
+        <p className="dr-dim">{t('Investment profit holds every exchange rate at Dec 31, {prev} (USD/KRW {a}): what the holdings earned in their own markets. The exchange-rate effect is the rest, from USD/KRW moving to {b} ({chg}).', {
+          prev, a: rate(fx.usd_start), b: rate(fx.usd_end), chg: pct(fxMove),
+        })}</p>
       )}
-      {fxStart && (
-        <>
-          <p><b>{t('With the exchange rate taken out.')}</b> {t('Holding every rate at Dec 31, {prev} (USD/KRW {r}) for the whole year:', { prev, r: rate(fxStart) })}</p>
-          <ul>{ccys.map(c => <li key={c}>{c}: <span className={cls(review.currencies[c].fixed_fx.profit)}>{signed(review.currencies[c].fixed_fx.profit, c)} ({pct(review.currencies[c].fixed_fx.return)})</span></li>)}</ul>
-          <p>{fixedLine}</p>
-        </>
-      )}
+      <p>{conclusion}</p>
     </section>
   );
 }
 
 function Drivers({ review, ccy }) {
-  const rows = review.currencies[ccy].by_symbol || [];
+  const r = review.currencies[ccy];
+  const rows = r.by_symbol || [];
   if (!rows.length) return null;
-  const max = Math.max(...rows.map(r => Math.abs(r.profit)), 1);
-  const losers = rows.filter(x => x.profit < 0).reverse().slice(0, 2);
-  const winners = rows.filter(x => x.profit > 0).slice(0, 3);
-  const sum = xs => xs.reduce((s, x) => s + x.profit, 0);
+  // Holdings by what their investment earned; the exchange rate gets its own bar at the end.
+  const bars = [...rows.map(x => ({ key: x.symbol, label: x.symbol, v: x.investment, x })), { key: '__fx', label: t('Exchange rate'), v: r.fx_effect, fx: true }];
+  const max = Math.max(...bars.map(b => Math.abs(b.v)), 1);
+  const losers = rows.filter(x => x.investment < 0).reverse().slice(0, 2);
+  const winners = rows.filter(x => x.investment > 0).slice(0, 3);
+  const sum = xs => xs.reduce((s, x) => s + x.investment, 0);
   return (
     <section>
       <h2>{t('What drove the year')}</h2>
       <p>
-        {losers.length > 0 && t('{list} cost {v}.', { list: listOf(losers.map(x => x.symbol)), v: shortAbs(sum(losers), ccy) })}{' '}
-        {winners.length > 0 && t('{list} added {v}.', { list: listOf(winners.map(x => x.symbol)), v: shortAbs(sum(winners), ccy) })}
+        {winners.length > 0 && t('{list} earned {v}.', { list: listOf(winners.map(x => x.symbol)), v: shortAbs(sum(winners), ccy) })}{' '}
+        {losers.length > 0 && t('{list} lost {v}.', { list: listOf(losers.map(x => x.symbol)), v: shortAbs(sum(losers), ccy) })}{' '}
+        {t(r.fx_effect >= 0 ? 'Separately, the exchange rate added {v}.' : 'Separately, the exchange rate cost {v}.', { v: shortAbs(r.fx_effect, ccy) })}
       </p>
       <div className="yr-bars">
-        {rows.map(r => {
-          const w = `${(Math.abs(r.profit) / max) * 50}%`;
+        {bars.map(b => {
+          const w = `${(Math.abs(b.v) / max) * 50}%`;
+          const tip = b.fx
+            ? `${t('Exchange-rate effect')}: ${signed(b.v, ccy)}`
+            : `${b.x.name}: ${t('Investment profit')} ${signed(b.v, ccy)} · ${t('Exchange-rate effect')} ${signed(b.x.fx, ccy)} · ${t('Total')} ${signed(b.x.profit, ccy)}`;
           return (
-            <div key={r.symbol} className="yr-bar-row" title={`${r.name}: ${signed(r.profit, ccy)}${r.dividends ? ` · ${t('Dividends after tax')} ${fmt(r.dividends, ccy)}` : ''}`}>
-              <span className="yr-name">{r.symbol}</span>
+            <div key={b.key} className={`yr-bar-row${b.fx ? ' yr-fx-row' : ''}`} title={tip}>
+              <span className="yr-name">{b.label}</span>
               <span className="yr-track">
-                <span className={`yr-bar ${r.profit < 0 ? 'neg' : 'pos'}`} style={r.profit < 0 ? { right: '50%', width: w } : { left: '50%', width: w }} />
+                <span className={`yr-bar ${b.fx ? 'fx' : b.v < 0 ? 'neg' : 'pos'}`} style={b.v < 0 ? { right: '50%', width: w } : { left: '50%', width: w }} />
               </span>
-              <span className={`yr-val ${cls(r.profit)}`}>{short(r.profit, ccy)}</span>
+              <span className={`yr-val ${cls(b.v)}`}>{short(b.v, ccy)}</span>
             </div>
           );
         })}
       </div>
-      <p className="dr-dim">{t('Each holding’s profit for the year, dividends included. Hover a bar for the exact figure.')}</p>
+      <p className="dr-dim">{t('Each holding’s investment profit (price change and dividends, exchange rate held at the start of the year). The exchange rate’s effect on all of them is the last bar. Hover a bar for the split.')}</p>
     </section>
   );
 }
@@ -333,7 +332,7 @@ function Drivers({ review, ccy }) {
 function Analysis({ review, ccy, base, ccys }) {
   const r = review.currencies[ccy];
   const rows = r.by_symbol || [];
-  const fxEffect = r.profit - r.fixed_fx.profit;
+  const fxEffect = r.fx_effect;
   const fx = review.fx;
   const fxItem = fx?.usd_start && fx?.usd_end && Math.abs(fxEffect) > 0.01 * r.invested
     ? [t('Exchange rate'), t(fxEffect > 0 ? 'USD/KRW went from {a} to {b}, which added {v} in {ccy}.' : 'USD/KRW went from {a} to {b}, which cost {v} in {ccy}.', {
@@ -341,14 +340,15 @@ function Analysis({ review, ccy, base, ccys }) {
     })]
     : null;
 
-  const worked = rows.filter(x => x.profit > 0).slice(0, 3).map(x => [x.symbol, x.dividends > 0.1 * x.profit
-    ? t('{v}, of which {d} dividends.', { v: short(x.profit, ccy), d: shortAbs(x.dividends, ccy) })
-    : `${short(x.profit, ccy)}.`]);
+  // Holdings are judged on what their investment earned; the exchange rate is its own item.
+  const worked = rows.filter(x => x.investment > 0).slice(0, 3).map(x => [x.symbol, x.investment_dividends > 0.1 * x.investment
+    ? t('{v}, of which {d} dividends.', { v: short(x.investment, ccy), d: shortAbs(x.investment_dividends, ccy) })
+    : `${short(x.investment, ccy)}.`]);
   if (fxItem && fxEffect > 0) worked.push(fxItem);
 
-  const didNot = rows.filter(x => x.profit < 0).reverse().slice(0, 3).map(x => [x.symbol, x.bought > x.start_value
-    ? t('{v}; mostly bought during the year, at higher prices than now.', { v: short(x.profit, ccy) })
-    : `${short(x.profit, ccy)}.`]);
+  const didNot = rows.filter(x => x.investment < 0).reverse().slice(0, 3).map(x => [x.symbol, x.bought > x.start_value
+    ? t('{v}; mostly bought during the year, at higher prices than now.', { v: short(x.investment, ccy) })
+    : `${short(x.investment, ccy)}.`]);
   if (fxItem && fxEffect < 0) didNot.push(fxItem);
 
   const held = rows.filter(x => x.end_value > 0);
@@ -440,6 +440,7 @@ function Method({ review }) {
         <li><b>{t('Prices')}:</b> {t('daily closes stored by the app (Yahoo Finance; Naver for KRX gold). USD/KRW was {a} at the start and {b} at the end.', { a: rate(review.fx?.usd_start), b: rate(review.fx?.usd_end) })}</li>
         <li><b>{t('Dividends')}:</b> {t('Yahoo dividend records, counted for shares held before each ex-date, after withholding: 15% on US dividends, 15.4% on Korean ones, none in IRP, ISA and pension (연금) accounts.')}</li>
         <li><b>{t('Profit')}:</b> {t('value at the end − value on Dec 31 − net purchases + dividends. Each purchase is converted at its own date’s rate. The % is profit ÷ (Dec 31 value + purchases).')}</li>
+        <li><b>{t('Exchange-rate effect')}:</b> {t('total profit minus the investment profit, which is the same year worked out with every exchange rate held at the start of the year.')}</li>
         <li>{t('Cash balances are left out of every return figure.')}</li>
         <li>{t('A record of what happened, not financial advice.')}</li>
       </ul>

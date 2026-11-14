@@ -141,7 +141,7 @@ export default function Projection() {
   const [spending, setSpending] = useState(DEFAULTS.spending); // per year, today's money
   const [income, setIncome] = useState(DEFAULTS.income);
   const [incomeStart, setIncomeStart] = useState(DEFAULTS.incomeStart);
-  const [years, setYears] = useState('30');
+  const [years, setYears] = useState('50');
   const [paths, setPaths] = useState(MIN_PATHS);
   const [seed, setSeed] = useState(1);
   const [view, setView] = useState('real');
@@ -198,7 +198,7 @@ export default function Projection() {
   }, [hist]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rate = start > 0 && spending != null ? spending / start : 0;
-  const H = Math.min(60, Math.max(1, Math.round(num(years)) || 30));
+  const H = Math.min(60, Math.max(1, Math.round(num(years)) || 50));
 
   const params = useMemo(() => {
     if (!(start > 0) || spending == null || mean === '' || vol === '') return null;
