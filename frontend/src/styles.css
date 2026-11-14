@@ -195,13 +195,28 @@ tr:hover td { background: var(--panel-2); }
 .yr-bar.pos { background: var(--green); opacity: .6; }
 .yr-bar.neg { background: var(--red); opacity: .6; }
 .yr-val { text-align: right; font-variant-numeric: tabular-nums; }
-.yr-bar.fx { background: var(--accent); opacity: .55; }
+.yr-bar.fx { background: var(--amber); opacity: .6; }
 .yr-fx-row { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); font-weight: 600; }
 .dr-table .dr-subhead td { background: var(--panel-2); font-weight: 600; color: var(--text-dim); font-size: 13px; }
-.dr-table .dr-fx td:first-child { color: var(--accent); }
+.dr-table .dr-fx td:first-child { color: var(--amber); }
 .dr-table .dr-total td { border-top: 2px solid var(--text-dim); }
+.yy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 8px 0 12px; }
+.yy-title { font-size: 14px; font-weight: 600; color: var(--text-dim); margin: 0 0 4px; }
+.yy-legend { display: flex; gap: 14px; justify-content: center; font-size: 12px; color: var(--text-dim); }
+.yy-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.yy-legend i + i { margin-left: -2px; }
+.yy-tip { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; line-height: 1.6; color: var(--text); }
+.yy-tip .up { color: var(--green); }
+.yy-tip .down { color: var(--red); }
+.yy-tip .yy-fx { color: var(--amber); }
+.dr-table tr.yy-row { cursor: pointer; }
+.dr-table tr.yy-row:hover td { background: var(--hover); }
+.dr-table tr.yy-current td { background: var(--panel-2); font-weight: 600; }
+.dr-table tr.yy-tr td:first-child { white-space: nowrap; }
+.dr-table tr.yy-tr td small { display: block; font-size: 12px; opacity: .8; }
 @media (max-width: 700px) {
   .doc-review { padding: 16px; }
   .dr-table { display: block; overflow-x: auto; }
   .yr-bar-row { grid-template-columns: 80px 1fr 56px; }
+  .yy-grid { grid-template-columns: 1fr; }
 }

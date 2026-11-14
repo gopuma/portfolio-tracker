@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, Cell, LabelList } from 'recharts';
 import { api } from '../api.js';
 import { t, locale } from '../i18n.jsx';
 
@@ -23,6 +24,9 @@ const signed = (n, ccy) => (n > 0 ? `+${fmt(n, ccy)}` : fmt(n, ccy));
 // ₩53.9M / $19.5K, locale-aware; signed() adds the sign.
 const shortAbs = (n, ccy) => `${SYM[ccy] || ''}${new Intl.NumberFormat(locale(), { notation: 'compact', maximumFractionDigits: Math.abs(n) >= 1000 ? 1 : 0 }).format(Math.abs(n))}${SYM[ccy] ? '' : ` ${ccy}`}`;
 const short = (n, ccy) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${shortAbs(n, ccy)}`;
+// One more digit (₩1.52B, +₩236.38M) where the bars are close in size.
+const shortAbs2 = (n, ccy) => `${SYM[ccy] || ''}${new Intl.NumberFormat(locale(), { notation: 'compact', ...(Math.abs(n) >= 1000 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { maximumFractionDigits: 0 }) }).format(Math.abs(n))}${SYM[ccy] ? '' : ` ${ccy}`}`;
+const short2 = (n, ccy) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${shortAbs2(n, ccy)}`;
 const fmtPx = (n, ccy) => `${SYM[ccy] || ''}${Number(n).toLocaleString(locale(), ccy === 'KRW' ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const pct = n => (n == null || isNaN(n) ? '–' : `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n * 100).toFixed(1)}%`);
 const share = n => `${Math.round(n * 100)}%`;
@@ -46,6 +50,15 @@ export default function YearReview({ portfolioId, portfolioName, base, initial, 
   const [openState, setOpen] = useState(false);
   const open = page || openState;
   const [view, setView] = useState(null);
+  const [history, setHistory] = useState(null); // every year's assets and profit, for the chart
+
+  useEffect(() => {
+    let cancelled = false;
+    api.portfolioYearHistory(portfolioId)
+      .then(d => { if (!cancelled) setHistory(d); })
+      .catch(() => { if (!cancelled) setHistory(null); });
+    return () => { cancelled = true; };
+  }, [portfolioId]);
 
   useEffect(() => {
     if (year == null || year === initial?.year) { setOther(null); return undefined; }
@@ -64,6 +77,8 @@ export default function YearReview({ portfolioId, portfolioName, base, initial, 
   // Sentences and bars default to won when it's there: the currency the money is spent in.
   const shown = view && ccys.includes(view) ? view : ccys.includes('KRW') ? 'KRW' : ccys[0];
   const ready = !loading && review?.currencies;
+  // The year's money sources in currency c, with salary held to the year before's level.
+  const fund = (c, r) => funding(r, salaryPriors(history, c).get(review?.year) ?? null);
 
   return (
     <article className={`panel doc-review${page ? ' dr-page' : ''}`}>
@@ -93,14 +108,15 @@ export default function YearReview({ portfolioId, portfolioName, base, initial, 
         <p className="dr-dim">{t('No trades recorded for this year.')}</p>
       ) : (
         <>
-          <Summary review={review} ccys={ccys} ccy={shown} base={base} />
+          <Summary review={review} ccys={ccys} ccy={shown} base={base} fund={fund} />
+          <YearByYear history={history} ccy={shown} year={review.year} onYear={setYear} />
           {open && (
             <>
               <HowToRead />
-              <MoneySources review={review} ccys={ccys} ccy={shown} />
+              <MoneySources review={review} ccys={ccys} ccy={shown} fund={fund} />
               <ProfitTable review={review} ccys={ccys} ytd={review.current ? ytd : null} />
               <Drivers review={review} ccy={shown} />
-              <Analysis review={review} ccy={shown} base={base} ccys={ccys} />
+              <Analysis review={review} ccy={shown} base={base} ccys={ccys} fund={fund} />
               <Checks checks={review.checks} />
               <Method review={review} />
             </>
@@ -117,17 +133,40 @@ const periodOf = review => (review.current ? t('{year} to date', { year: review.
 const result = (r, ccy) => `${signed(r.profit, ccy)} (${pct(r.return)})`;
 
 /**
- * Where the year's purchases were paid from, from the records alone: cash drawn down from
- * recorded accounts (withdrawals − deposits), dividends received, and the rest — money the
- * app never saw (salary, stock pay, savings). Cash drawn but not spent shows as such.
+ * Where the year's purchases were paid from, from the records alone, in this order: cash
+ * drawn down from recorded accounts (withdrawals − deposits), dividends received, holdings
+ * entered as the records began (owned before, not bought), shares delivered to a stock-plan
+ * account (stock pay), and the rest — money the app never saw, taken to be cash from salary.
+ * Salary saved doesn't jump from one year to the next, so when that rest is more than
+ * SALARY_JUMP × the year before's (`prior`), salary is held at the year before's level and the
+ * excess counted as other cash savings. The note continues:
+ * (it may include other savings). Cash drawn but not spent shows as such.
  */
-function funding(r) {
+const SALARY_JUMP = 1.5;
+function funding(r, prior = null) {
   const net = r.bought - r.sold;
   const cash = r.cash.withdrawals - r.cash.deposits;
   const fromCash = Math.max(0, Math.min(cash, net));
   const fromDiv = Math.max(0, Math.min(r.dividends, net - fromCash));
   const outside = Math.max(0, net - fromCash - fromDiv);
-  return { net, fromCash, fromDiv, outside, unspent: Math.max(0, cash - fromCash) };
+  const opening = Math.min(r.opening || 0, outside);
+  const stockPay = Math.min(r.stock_pay || 0, outside - opening);
+  const rest = outside - opening - stockPay;
+  const capped = prior > 0 && rest > prior * SALARY_JUMP;
+  const salary = capped ? prior : rest;
+  return { net, fromCash, fromDiv, outside, opening, stockPay, salary, savings: rest - salary, capped, prior, unspent: Math.max(0, cash - fromCash) };
+}
+
+/** Each year's prior for funding(): the year before's cash from salary, after its own cap. */
+function salaryPriors(history, ccy) {
+  const priors = new Map();
+  let prev = null;
+  for (const y of history?.years || []) {
+    if (!y[ccy]) continue;
+    priors.set(y.year, prev);
+    prev = funding({ ...y[ccy], cash: y[ccy].cash_flows }, prev).salary;
+  }
+  return priors;
 }
 
 /**
@@ -155,17 +194,19 @@ function leadSentence(review, ccys, ccy, base) {
 
 // ---- sections ---------------------------------------------------------------------------
 
-function Summary({ review, ccys, ccy, base }) {
+function Summary({ review, ccys, ccy, base, fund }) {
   const r = review.currencies[ccy];
   const rows = r.by_symbol || [];
   const gains = rows.filter(x => x.investment > 0).slice(0, 3).map(x => x.symbol);
   const losses = rows.filter(x => x.investment < 0).reverse().slice(0, 3).map(x => x.symbol);
-  const f = funding(r);
+  const f = fund(ccy, r);
   const items = [];
   if (f.net > 0) {
-    items.push([t('Money added'), t('{net} of purchases, net of sales: {outside} from outside the records (salary, stock pay, savings), {cash} from recorded cash and {div} from dividends.', {
-      net: shortAbs(f.net, ccy), outside: shortAbs(f.outside, ccy), cash: shortAbs(f.fromCash, ccy), div: shortAbs(f.fromDiv, ccy),
-    })]);
+    const parts = [
+      [f.salary, 'cash from estimated salary {v}'], [f.savings, 'other cash savings {v}'], [f.stockPay, 'stock pay {v}'], [f.fromCash, 'recorded cash {v}'],
+      [f.fromDiv, 'dividends {v}'], [f.opening, 'holdings owned before the records {v}'],
+    ].filter(([v]) => v > 0.5).map(([v, label]) => t(label, { v: shortAbs(v, ccy) }));
+    items.push([t('Money added'), t('{net} of purchases, net of sales: {parts}.', { net: shortAbs(f.net, ccy), parts: listOf(parts) })]);
   }
   if (gains.length) items.push([t('What helped'), r.dividends > 0
     ? t('{list}, plus {d} of dividends.', { list: listOf(gains), d: shortAbs(r.dividends, ccy) })
@@ -205,8 +246,8 @@ function HowToRead() {
   );
 }
 
-function MoneySources({ review, ccys, ccy }) {
-  const fs = Object.fromEntries(ccys.map(c => [c, funding(review.currencies[c])]));
+function MoneySources({ review, ccys, ccy, fund }) {
+  const fs = Object.fromEntries(ccys.map(c => [c, fund(c, review.currencies[c])]));
   const f = fs[ccy];
   if (!(f.net > 0)) return null;
   const row = (label, key, how, strong) => (
@@ -219,21 +260,182 @@ function MoneySources({ review, ccys, ccy }) {
   return (
     <section>
       <h2>{t('Where the money came from')}</h2>
-      <p>{t('You bought {net} of investments in {year}, net of sales. {pct} of it came from outside the records: salary, stock pay or savings.', {
-        net: fmt(f.net, ccy), year: review.year, pct: share(f.outside / f.net),
-      })}</p>
+      <p>
+        {t('You bought {net} of investments in {year}, net of sales. Stock pay was {pay} ({payPct}) and cash from estimated salary {sal} ({salPct}).', {
+          net: fmt(f.net, ccy), year: review.year, pay: fmt(f.stockPay, ccy), payPct: share(f.stockPay / f.net), sal: fmt(f.salary, ccy), salPct: share(f.salary / f.net),
+        })}
+        {f.capped && ` ${t('Money from outside the records came to {rest}, far above the year before’s salary level of {prior}, so salary is kept at that level and the other {sav} is counted as other cash savings.', {
+          rest: fmt(f.salary + f.savings, ccy), prior: fmt(f.prior, ccy), sav: fmt(f.savings, ccy),
+        })}`}
+      </p>
       <table className="dr-table">
         <thead><tr><th>{t('Source')}</th>{ccys.map(c => <th key={c} className="num">{c}</th>)}<th>{t('How it was identified')}</th></tr></thead>
         <tbody>
           {row(t('Recorded cash'), 'fromCash', t('Cash withdrawn from accounts in this portfolio, minus deposits'))}
           {row(t('Dividends reinvested'), 'fromDiv', t('Dividends after tax, assumed reinvested'))}
-          {row(t('Outside the records'), 'outside', t('Salary, stock pay or savings: what is left'))}
+          {fs[ccy].opening > 0.5 && row(t('Holdings owned before the records'), 'opening', t('Entered in the first week of the records: owned before, not bought this year'))}
+          {row(t('Stock pay'), 'stockPay', t('Shares delivered to a stock-plan account (e.g. RSU vests at Morgan Stanley), at their value that day'))}
+          {row(t('Cash from estimated salary'), 'salary', f.capped
+            ? t('Held at the year before’s level: salary saved doesn’t jump from one year to the next')
+            : t('What is left: money from outside the records, most likely salary saved'))}
+          {f.savings > 0.5 && row(t('Other cash savings'), 'savings', t('Money from outside the records above the salary level: savings built up earlier'))}
           {row(t('Total bought (net of sales)'), 'net', '', true)}
         </tbody>
       </table>
       <p className="dr-dim">{t('Amounts in each currency use each date’s exchange rate.')}</p>
-      <p><b>{t('How this was worked out.')}</b> {t('The app has no record of salary coming in, and buying does not draw down a cash account. So purchases are counted as paid first by cash taken from recorded accounts and by dividends; the rest came from money the app never saw. Recording each salary deposit as cash would make this exact.')}</p>
+      <p><b>{t('How this was worked out.')}</b> {t('The app has no record of salary coming in, and buying does not draw down a cash account. So purchases are counted as paid first by cash taken from recorded accounts and by dividends. Shares that arrived in a stock-plan account are stock pay. The rest came from money the app never saw, and is shown as cash from estimated salary; anything more than 1.5 times the year before’s salary level is counted as other cash savings instead. Recording each salary deposit as cash would make this exact.')}</p>
       {f.unspent > 0 && <p>{t('{v} of cash was withdrawn but not invested during the year, so it left this portfolio’s records.', { v: fmt(f.unspent, ccy) })}</p>}
+    </section>
+  );
+}
+
+/**
+ * Every year side by side: assets at each year's end (investments + cash) and each year's
+ * profit or loss, split into investment profit and the exchange-rate effect. The year being
+ * read is highlighted; clicking another year's bar opens its review.
+ */
+function YearByYear({ history, ccy, year, onYear }) {
+  const rows = (history?.years || []).filter(y => y[ccy]);
+  if (rows.length === 0) return null;
+  const priors = salaryPriors(history, ccy);
+  const data = rows.map((y, i) => {
+    const prev = i > 0 ? rows[i - 1][ccy].assets : null;
+    const chg = prev != null ? y[ccy].assets - prev : null;
+    return {
+      year: y.year,
+      label: y.current ? t('{year} to date', { year: y.year }) : String(y.year),
+      ...y[ccy],
+      ...(() => { const f = funding({ ...y[ccy], cash: y[ccy].cash_flows }, priors.get(y.year) ?? null); return { stockPay: f.stockPay, salary: f.salary, savings: f.savings }; })(),
+      chg, // assets compared with the year before
+      chg_pct: prev ? chg / prev : null,
+      fx_pct: y[ccy].return != null && y[ccy].investment_return != null ? y[ccy].return - y[ccy].investment_return : null,
+    };
+  });
+  // A bar's label in two lines, the amount over its percentage: above a bar that goes up,
+  // below one that goes down.
+  const twoLine = (top, bottom, strong) => function TwoLine({ x, y, width, height, index }) {
+    const d = data[index];
+    const a = top(d), b = bottom(d);
+    if (a == null) return null;
+    const neg = (d[strong] ?? 0) < 0;
+    const edge = neg ? Math.max(y, y + height) : Math.min(y, y + height);
+    const cx = x + width / 2;
+    const y1 = neg ? edge + 13 : edge - (b ? 19 : 6);
+    return (
+      <text x={cx} y={y1} textAnchor="middle" fontSize={11} fill="var(--text-dim)">
+        <tspan x={cx} fill="var(--text)" fontWeight={600}>{a}</tspan>
+        {b && <tspan x={cx} dy={13}>{b}</tspan>}
+      </text>
+    );
+  };
+  const tick = { fill: 'var(--text-dim)', fontSize: 12 };
+  const axis = v => (v === 0 ? '0' : short(v, ccy).replace('+', ''));
+  const pick = d => { if (d?.year != null && d.year !== year) onYear(d.year); };
+  const dim = d => (d.year === year ? 1 : 0.45);
+  const tip = ({ active, payload }) => {
+    if (!active || !payload?.length) return null;
+    const d = payload[0].payload;
+    return (
+      <div className="yy-tip">
+        <strong>{d.label}</strong>
+        <div>{t('Assets at year end')}: {fmt(d.assets, ccy)}</div>
+        <div className="dr-dim">{t('Investments')} {fmt(d.securities, ccy)} · {t('Cash')} {fmt(d.cash, ccy)}</div>
+        {d.chg != null && <div className={cls(d.chg)}>{t('Change from the year before')}: {signed(d.chg, ccy)} ({pct(d.chg_pct)})</div>}
+        <div>{t('Stock pay')} {fmt(d.stockPay, ccy)} · {t('Cash from estimated salary')} {fmt(d.salary, ccy)}{d.savings > 0.5 ? ` · ${t('Other cash savings')} ${fmt(d.savings, ccy)}` : ''}</div>
+        <div className={cls(d.investment)}>{t('Investment profit')}: {signed(d.investment, ccy)} ({pct(d.investment_return)})</div>
+        <div className="yy-fx">{t('Exchange-rate effect')}: {signed(d.fx_effect, ccy)} ({pct(d.fx_pct)})</div>
+        <div className={cls(d.profit)}><strong>{t('Total profit')}: {signed(d.profit, ccy)} ({pct(d.return)})</strong></div>
+      </div>
+    );
+  };
+  const first = data[0], last = data[data.length - 1];
+  const growth = last.assets - first.assets;
+  const earned = data.slice(1).reduce((s, d) => s + d.profit, 0);
+  return (
+    <section>
+      <h2>{t('Year by year')}</h2>
+      {data.length > 1 && (
+        <p>{t('Assets went from {a} at the end of {y1} to {b} ({chg}). Profit in the years since accounts for {e} of that; the rest is money added or withdrawn.', {
+          a: shortAbs(first.assets, ccy), y1: first.year, b: shortAbs(last.assets, ccy), chg: short(growth, ccy), e: short(earned, ccy),
+        })}</p>
+      )}
+      <div className="yy-grid">
+        <div>
+          <h3 className="yy-title">{t('Assets at year end')}</h3>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={data} margin={{ top: 36, right: 8, left: 4, bottom: 0 }}>
+              <CartesianGrid stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="label" tick={tick} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
+              <YAxis tick={tick} tickFormatter={axis} axisLine={false} tickLine={false} width={64} />
+              <Tooltip content={tip} cursor={{ fill: 'var(--hover)' }} />
+              <Bar dataKey="securities" name={t('Investments')} stackId="a" fill="var(--accent)" onClick={pick} style={{ cursor: 'pointer' }}>
+                {data.map(d => <Cell key={d.year} fillOpacity={dim(d) * 0.85} />)}
+              </Bar>
+              <Bar dataKey="cash" name={t('Cash')} stackId="a" fill="var(--text-dim)" radius={[3, 3, 0, 0]} onClick={pick} style={{ cursor: 'pointer' }}>
+                {data.map(d => <Cell key={d.year} fillOpacity={dim(d) * 0.5} />)}
+                <LabelList dataKey="assets" content={twoLine(d => shortAbs2(d.assets, ccy), d => (d.chg == null ? null : `${short2(d.chg, ccy)} · ${pct(d.chg_pct)}`), 'assets')} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="yy-legend">
+            <span><i style={{ background: 'var(--accent)' }} />{t('Investments')}</span>
+            <span><i style={{ background: 'var(--text-dim)', opacity: 0.6 }} />{t('Cash')}</span>
+          </div>
+        </div>
+        <div>
+          <h3 className="yy-title">{t('Profit or loss each year')}</h3>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={data} margin={{ top: 36, right: 8, left: 4, bottom: 0 }}>
+              <CartesianGrid stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="label" tick={tick} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
+              <YAxis tick={tick} tickFormatter={axis} axisLine={false} tickLine={false} width={64} />
+              <ReferenceLine y={0} stroke="var(--text-dim)" />
+              <Tooltip content={tip} cursor={{ fill: 'var(--hover)' }} />
+              <Bar dataKey="investment" name={t('Investment profit')} onClick={pick} style={{ cursor: 'pointer' }}>
+                {data.map(d => <Cell key={d.year} fill={d.investment < 0 ? 'var(--red)' : 'var(--green)'} fillOpacity={dim(d) * 0.8} />)}
+                <LabelList dataKey="investment" content={twoLine(d => short(d.investment, ccy), d => pct(d.investment_return), 'investment')} />
+              </Bar>
+              <Bar dataKey="fx_effect" name={t('Exchange-rate effect')} fill="var(--amber)" onClick={pick} style={{ cursor: 'pointer' }}>
+                {data.map(d => <Cell key={d.year} fillOpacity={dim(d) * 0.7} />)}
+                <LabelList dataKey="fx_effect" content={twoLine(d => short(d.fx_effect, ccy), d => (d.fx_pct == null ? null : pct(d.fx_pct)), 'fx_effect')} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="yy-legend">
+            <span><i style={{ background: 'var(--green)' }} /><i style={{ background: 'var(--red)' }} />{t('Investment profit')}</span>
+            <span><i style={{ background: 'var(--amber)' }} />{t('Exchange-rate effect')}</span>
+          </div>
+        </div>
+      </div>
+      <table className="dr-table">
+        <thead>
+          <tr>
+            <th>{t('Year')}</th>
+            <th className="num">{t('Assets at year end')}</th>
+            <th className="num">{t('Change from the year before')}</th>
+            <th className="num">{t('Stock pay')}</th>
+            <th className="num">{t('Cash from estimated salary')}</th>
+            <th className="num">{t('Investment profit')}</th>
+            <th className="num">{t('Exchange-rate effect')}</th>
+            <th className="num">{t('Total profit')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.map(d => (
+            <tr key={d.year} className={`yy-tr ${d.year === year ? 'yy-current' : 'yy-row'}`} onClick={() => pick(d)}>
+              <td>{d.label}</td>
+              <td className="num">{fmt(d.assets, ccy)}</td>
+              <td className={`num ${cls(d.chg)}`}>{d.chg == null ? '–' : <>{signed(d.chg, ccy)}<small>{pct(d.chg_pct)}</small></>}</td>
+              <td className="num">{fmt(d.stockPay, ccy)}</td>
+              <td className="num">{fmt(d.salary, ccy)}{d.savings > 0.5 && <small>{t('+{v} other savings', { v: shortAbs(d.savings, ccy) })}</small>}</td>
+              <td className={`num ${cls(d.investment)}`}>{signed(d.investment, ccy)}<small>{pct(d.investment_return)}</small></td>
+              <td className="num">{signed(d.fx_effect, ccy)}{d.fx_pct != null && <small>{pct(d.fx_pct)}</small>}</td>
+              <td className={`num ${cls(d.profit)}`}>{signed(d.profit, ccy)}<small>{pct(d.return)}</small></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="dr-dim">{t('Assets include cash recorded in this portfolio, valued at each year’s Dec 31 rate (today’s for this year). Profit counts only the investments; money added or withdrawn is not profit. The change from the year before includes both. Percentages of profit are of the Dec 31 value plus purchases. Click a year to read its review.')}</p>
     </section>
   );
 }
@@ -329,7 +531,7 @@ function Drivers({ review, ccy }) {
   );
 }
 
-function Analysis({ review, ccy, base, ccys }) {
+function Analysis({ review, ccy, base, ccys, fund }) {
   const r = review.currencies[ccy];
   const rows = r.by_symbol || [];
   const fxEffect = r.fx_effect;
@@ -367,8 +569,8 @@ function Analysis({ review, ccy, base, ccys }) {
   const noPriceN = (review.checks || []).filter(c => c.status === 'no_price').length;
   if (avgN) records.push([t('Average prices'), t('{n} trades were entered at your average price from the Holdings card. This review counts them at that day’s close; recording the real purchase dates and prices would make that step unnecessary.', { n: avgN })]);
   if (noPriceN) records.push([t('Missing prices'), t('{n} trades have no market price on their date, so they count at the recorded price.', { n: noPriceN })]);
-  const f = funding(r);
-  if (f.outside > 0) records.push([t('Salary'), t('Deposits from salary are not recorded, so {v} of purchases can only be put down to “outside the records”.', { v: shortAbs(f.outside, ccy) })]);
+  const f = fund(ccy, r);
+  if (f.salary > 0) records.push([t('Salary'), t('Salary deposits are not recorded, so {v} of cash from salary is an estimate: what is left after cash, dividends and stock pay, held to the year before’s level. Recording each salary deposit as cash would make it exact.', { v: shortAbs(f.salary, ccy) })]);
   if (f.unspent > 0) records.push([t('Cash'), t('{v} withdrawn during the year was not invested or recorded elsewhere.', { v: shortAbs(f.unspent, ccy) })]);
 
   const next = review.current ? review.year + 1 : null;

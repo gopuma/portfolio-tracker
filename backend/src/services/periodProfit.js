@@ -25,6 +25,13 @@ const DAY_MS = 86_400_000;
 const isCash = sym => typeof sym === 'string' && sym.startsWith('CASH:');
 
 /**
+ * Accounts where an employer's stock plan delivers shares (RSU vests, ESPP): buys there are
+ * stock pay, not money put in. Matched on the account name the user typed.
+ */
+const STOCK_PLAN = /morgan\s*stanley|e\*?\s*trade|shareworks|stock\s*plan|equity\s*award|equatex|computershare|\brsu\b|\bespp\b/i;
+export const isStockPayAccount = account => STOCK_PLAN.test(String(account || ''));
+
+/**
  * Withholding on a cash dividend, for a Korean resident: none in Korea's tax-deferred
  * accounts (IRP, ISA, pension savings 연금저축), 15.4% on Korean dividends, and the US
  * treaty rate of 15% on foreign ones.
@@ -198,6 +205,24 @@ export function cashFlows(txns, start, end, toBase) {
   return { deposits, withdrawals };
 }
 
+/**
+ * Cash held at the end of a day: every deposit less every withdrawal up to and including it,
+ * per currency, converted at the period end's rate (toBase with a null date).
+ */
+export function cashBalance(txns, end, toBase) {
+  const held = new Map();
+  for (const t of txns) {
+    if (!isCash(t.symbol) || t.trade_date > end) continue;
+    const ccy = t.currency || t.symbol.slice(5);
+    const amount = Number(t.shares) * (Number(t.price) || 1);
+    const sign = t.side === 'deposit' ? 1 : t.side === 'withdraw' ? -1 : 0;
+    held.set(ccy, (held.get(ccy) || 0) + sign * amount);
+  }
+  let total = 0;
+  for (const [ccy, amount] of held) total += toBase(amount, ccy, null);
+  return total;
+}
+
 /** A dated series per symbol from rows of { symbol, d, v } (+ the day's lo / hi when given). */
 function seriesBySymbol(rows) {
   const m = new Map();
@@ -242,6 +267,7 @@ export async function yearReview(portfolioId, currencies, rates, { year, today =
   const symbols = [...new Set(txns.filter(t => !isCash(t.symbol)).map(t => t.symbol))];
   if (symbols.length === 0) return null;
   const before = dayBefore(start);
+  const openingUntil = new Date(Date.parse(`${txns[0].trade_date}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
   const firstYear = Number(txns[0].trade_date.slice(0, 4));
   const years = [];
   for (let y = thisYear; y >= firstYear; y--) years.push(y);
@@ -321,6 +347,10 @@ export async function yearReview(portfolioId, currencies, rates, { year, today =
       };
     }).filter(r => r.invested > 0 || r.end_value > 0).sort((a, b) => b.investment - a.investment);
     const f = run(fixed(base));
+    // Shares delivered by a stock plan this year, at the value they arrived with.
+    const pay = run(toBase, txns.filter(t => !isCash(t.symbol) && isStockPayAccount(t.account)));
+    // Holdings entered as the records began (the first week): owned before, not bought now.
+    const opening = run(toBase, txns.filter(t => !isCash(t.symbol) && !isStockPayAccount(t.account) && t.trade_date <= openingUntil));
     out[base] = {
       ...whole,
       by_symbol: bySymbol,
@@ -329,6 +359,9 @@ export async function yearReview(portfolioId, currencies, rates, { year, today =
       fixed_fx: { profit: f.profit, return: f.return, price: f.price_and_fx, dividends: f.dividends },
       fx_effect: whole.profit - f.profit,
       cash: cashFlows(txns, start, end, toBase),
+      cash_balance: cashBalance(txns, end, toBase),
+      stock_pay: Math.max(0, pay.bought - pay.sold),
+      opening: Math.max(0, opening.bought - opening.sold),
     };
   }
   return {
@@ -337,4 +370,42 @@ export async function yearReview(portfolioId, currencies, rates, { year, today =
     checks: priceChecks(txns, start, end, closes),
     fx: { usd_start: krwPer('USD', before), usd_end: krwPer('USD', null) },
   };
+}
+
+/**
+ * Every year of a portfolio side by side, for the review's year-by-year chart: each year's
+ * assets at its end (securities + cash, the current year's as of today) and its profit,
+ * split into investment profit and the exchange-rate effect. Oldest year first.
+ */
+export async function yearHistory(portfolioId, currencies, rates, { today = new Date() } = {}) {
+  const first = await yearReview(portfolioId, currencies, rates, { today });
+  if (!first) return null;
+  const reviews = await Promise.all(first.years.map(y =>
+    (y === first.year ? first : yearReview(portfolioId, currencies, rates, { year: y, today }))));
+  const years = reviews.map(r => ({
+    year: r.year,
+    current: r.current,
+    ...Object.fromEntries(currencies.map(c => {
+      const x = r.currencies[c];
+      return [c, {
+        end: x.end,
+        securities: x.end_value,
+        cash: x.cash_balance,
+        assets: x.end_value + x.cash_balance,
+        profit: x.profit,
+        return: x.return,
+        investment: x.fixed_fx.profit,
+        investment_return: x.fixed_fx.return,
+        fx_effect: x.fx_effect,
+        // What funding() on the review page needs to split the year's purchases by source.
+        bought: x.bought,
+        sold: x.sold,
+        dividends: x.dividends,
+        cash_flows: x.cash,
+        stock_pay: x.stock_pay,
+        opening: x.opening,
+      }];
+    })),
+  })).sort((a, b) => a.year - b.year);
+  return { currencies, years };
 }

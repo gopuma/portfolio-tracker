@@ -7,13 +7,17 @@ import { t, locale } from '../i18n.jsx';
 const KRX_SYMBOL = 'KRX-GOLD-SPOT';
 const INTL_SYMBOL = 'GC=F';
 const FX_SYMBOL = 'KRW=X';
-const MAX_DAYS = 1825;
+// All the stored history: KRX gold goes back to Nov 2006 (as far as Naver's series reaches),
+// gold futures to 2000. The prices endpoint caps a request at about 55 years.
+const MAX_DAYS = 365 * 30;
 
-// Trend-chart period presets (history caps at 1825 days / 5y).
+// Trend-chart period presets. 'Max' is everything both series cover (worked out from the data).
 const PRESETS = [
   { label: '1Y', days: 365 },
   { label: '3Y', days: 1095 },
   { label: '5Y', days: 1825 },
+  { label: '10Y', days: 3650 },
+  { label: 'Max', days: null },
 ];
 
 const KRX_COLOR = '#fbbf24';  // amber
@@ -61,7 +65,7 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
     return () => clearInterval(id);
   }, []);
 
-  // Full history for the chart and the 1Y/3Y/5Y averages, independent of the live data;
+  // Full history for the chart and the 1Y/3Y/5Y/10Y averages, independent of the live data;
   // fetched again when the Overview bumps reloadKey.
   useEffect(() => {
     api.prices(KRX_SYMBOL, MAX_DAYS).then(d => setKrxHist(d.prices || [])).catch(() => {});
@@ -83,8 +87,19 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
     return dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : null;
   }, [krxHist, intlHist]);
 
+  // Days back to the first date both series have: the 'Max' period.
+  const maxDays = useMemo(() => {
+    if (!krxRows.length || !intlRows.length) return MAX_DAYS;
+    const first = krxRows[0].t > intlRows[0].t ? krxRows[0].t : intlRows[0].t;
+    return Math.ceil((Date.now() - Date.parse(`${first}T00:00:00Z`)) / 86_400_000) + 1;
+  }, [krxRows, intlRows]);
+
   const [days, setDays] = useState(365); // chart period, default 1Y
   const [draft, setDraft] = useState('365'); // custom-period input buffer
+  const chartStart = useMemo(() => {
+    if (!krxRows.length || !intlRows.length) return '';
+    return krxRows[0].t > intlRows[0].t ? krxRows[0].t : intlRows[0].t;
+  }, [krxRows, intlRows]);
 
   // Both series by date for the trend chart, filtered to the selected period.
   const chartData = useMemo(() => {
@@ -115,7 +130,7 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
   const applyDraft = () => {
     const n = Math.round(Number(draft));
     if (!n || n < 1) return;
-    setDays(Math.min(n, MAX_DAYS));
+    setDays(Math.min(n, maxDays));
   };
 
   if (err) return <div className="panel"><h2>{t('Gold Gap')}</h2><div className="error">{t('Failed: {err}', { err })}</div></div>;
@@ -194,19 +209,25 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginTop: 16 }}>
         <h3 style={{ margin: 0 }}>{t('Price Trend')}</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {PRESETS.map(p => (
+          {PRESETS.map(p => {
+            const d = p.days ?? maxDays;
+            // A preset longer than the history is the same as Max: hide it.
+            if (p.days != null && p.days >= maxDays) return null;
+            return (
             <button
               key={p.label}
-              className={`btn ${days === p.days ? '' : 'ghost'}`}
-              onClick={() => { setDays(p.days); setDraft(String(p.days)); }}
+              className={`btn ${days === d ? '' : 'ghost'}`}
+              onClick={() => { setDays(d); setDraft(String(d)); }}
+              title={p.days == null ? t('All history both prices cover, from {date}', { date: chartStart }) : undefined}
             >
               {t(p.label)}
             </button>
-          ))}
+            );
+          })}
           <input
             type="number"
             min={1}
-            max={MAX_DAYS}
+            max={maxDays}
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') applyDraft(); }}
@@ -300,12 +321,13 @@ export default function GoldGapPanel({ reloadKey = 0 }) {
   );
 }
 
-// Compact 1Y/3Y/5Y average list with the current price's deviation from each.
+// Compact 1Y/3Y/5Y/10Y average list with the current price's deviation from each.
 function AvgBlock({ avgs, current, unit, digits = 2 }) {
   const rows = [
     ['1Y avg', avgs.y1],
     ['3Y avg', avgs.y3],
     ['5Y avg', avgs.y5],
+    ['10Y avg', avgs.y10],
   ];
   return (
     <div style={{ marginTop: 'auto', paddingTop: 8, borderTop: '1px solid var(--border)' }}>

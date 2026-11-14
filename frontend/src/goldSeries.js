@@ -56,7 +56,7 @@ export function mergeGold(krxRows, intlRows, cut = '') {
 }
 
 /**
- * 1Y / 3Y / 5Y mean of a series, counted back from `today` (YYYY-MM-DD). Windows that run
+ * 1Y / 3Y / 5Y / 10Y mean of a series, counted back from `today` (YYYY-MM-DD). Windows that run
  * past the available history just average whatever exists.
  */
 export function averages(rows, today = new Date().toISOString().slice(0, 10)) {
@@ -68,7 +68,7 @@ export function averages(rows, today = new Date().toISOString().slice(0, 10)) {
     if (sel.length === 0) return null;
     return sel.reduce((a, r) => a + r.v, 0) / sel.length;
   };
-  return { y1: avgOver(365), y3: avgOver(1095), y5: avgOver(1825) };
+  return { y1: avgOver(365), y3: avgOver(1095), y5: avgOver(1825), y10: avgOver(3650) };
 }
 
 // Round steps for an axis: 1, 2, 2.5 or 5 × a power of ten. niceStep is the largest not

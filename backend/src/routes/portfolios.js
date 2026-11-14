@@ -4,7 +4,7 @@ import { ensureTrackedInstrument } from '../services/instrumentService.js';
 import { fetchQuotes } from '../services/priceFetcher.js';
 import { TRADING_DAYS, riskStats, toReturns, pearsonMaps } from '../services/stats.js';
 import { loadTransactions, transactionsToEvents, rederivePortfolioHoldings, findOversell } from '../services/ledgerService.js';
-import { yearReview } from '../services/periodProfit.js';
+import { yearReview, yearHistory } from '../services/periodProfit.js';
 import {
   HttpError, badRequest, parseId, parseTradeDate, parseShares, parsePrice, parseAccount, provided, todayLocal,
   MIN_PRICE, MAX_PRICE, MIN_SHARES,
@@ -618,6 +618,17 @@ portfoliosRouter.get('/:id/ytd-profit', async (req, res, next) => {
     const year = /^\d{4}$/.test(String(req.query.year || '')) ? Number(req.query.year) : undefined;
     const review = await yearReview(rows[0].id, currencies, await getFxRates(), { year });
     res.json(review || { currencies: null, checks: [], fx: null });
+  } catch (e) { next(e); }
+});
+
+// Every year's year-end assets (securities + cash) and profit, for the review's chart.
+portfoliosRouter.get('/:id/year-history', async (req, res, next) => {
+  try {
+    const rows = await query(`SELECT id, base_currency FROM portfolios WHERE id = ?`, [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Portfolio not found' });
+    const base = rows[0].base_currency;
+    const currencies = base === 'KRW' ? ['KRW'] : [base, 'KRW'];
+    res.json((await yearHistory(rows[0].id, currencies, await getFxRates())) || { currencies, years: [] });
   } catch (e) { next(e); }
 });
 

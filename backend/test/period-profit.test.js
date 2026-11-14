@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { periodProfit, dividendTaxRate, asOf, priceChecks, cashFlows, tradePrice } from '../src/services/periodProfit.js';
+import { periodProfit, dividendTaxRate, asOf, priceChecks, cashFlows, cashBalance, isStockPayAccount, tradePrice } from '../src/services/periodProfit.js';
 import { dividendsFromEvents } from '../src/services/priceFetcher.js';
 
 const series = obj => new Map(Object.entries(obj).map(([sym, pts]) => [sym, Object.entries(pts).map(([d, v]) => ({ d, v }))]));
@@ -157,4 +157,24 @@ test('a past period ends with the holdings of its last day, not later trades', (
   });
   assert.equal(r.end_value, 10 * 120);
   assert.equal(r.profit, 200);
+});
+
+test('cash balance at a date: deposits less withdrawals so far, at the end rate', () => {
+  const txns = [
+    { symbol: 'CASH:KRW', side: 'deposit', shares: 1_000_000, price: 1, currency: 'KRW', trade_date: '2024-01-01' },
+    { symbol: 'CASH:KRW', side: 'withdraw', shares: 400_000, price: 1, currency: 'KRW', trade_date: '2026-02-05' },
+    { symbol: 'CASH:USD', side: 'deposit', shares: 100, price: 1, currency: 'USD', trade_date: '2025-06-01' },
+    { symbol: 'X', side: 'buy', shares: 1, price: 999, currency: 'USD', trade_date: '2025-06-01' },
+  ];
+  assert.equal(cashBalance(txns, '2025-12-31', toKrw), 1_000_000 + 100 * 1300);
+  assert.equal(cashBalance(txns, '2026-11-12', toKrw), 600_000 + 100 * 1300);
+  assert.equal(cashBalance(txns, '2023-12-31', toKrw), 0);
+});
+
+test('stock plan accounts are recognised by name', () => {
+  assert.equal(isStockPayAccount('Morgan Stanley'), true);
+  assert.equal(isStockPayAccount('E*TRADE'), true);
+  assert.equal(isStockPayAccount('Fidelity Stock Plan'), true);
+  assert.equal(isStockPayAccount('영웅문'), false);
+  assert.equal(isStockPayAccount(''), false);
 });
