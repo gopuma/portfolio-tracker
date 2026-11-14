@@ -8,14 +8,21 @@ import { t, locale } from '../i18n.jsx';
 const UPBIT_SYMBOL = 'UPBIT-KRW-BTC';
 const GLOBAL_SYMBOL = 'BTC-USD';
 const FX_SYMBOL = 'KRW=X';
-const MAX_DAYS = 1825;
+// All the stored history: Upbit's KRW market opened on 2017-09-25 and Yahoo's BTC-USD
+// starts on 2014-09-17. The prices endpoint caps a request at about 55 years.
+const MAX_DAYS = 365 * 30;
 
-// Trend-chart period presets (history caps at 1825 days / 5y).
+// Trend-chart period presets. 'Max' is everything both series cover (worked out from the data).
 const PRESETS = [
   { label: '1Y', days: 365 },
   { label: '3Y', days: 1095 },
   { label: '5Y', days: 1825 },
+  { label: '10Y', days: 3650 },
+  { label: 'Max', days: null },
 ];
+const TEN_YEARS_MS = 3650 * 86_400_000;
+// Whether a series reaches back a full ten years, so its 10Y average means what it says.
+const spansTenYears = rows => rows.length > 0 && Date.now() - Date.parse(`${rows[0].t}T00:00:00Z`) >= TEN_YEARS_MS;
 
 const UPBIT_COLOR = '#f7931a';  // bitcoin orange
 const GLOBAL_COLOR = '#4a9eff'; // blue
@@ -79,6 +86,13 @@ export default function BitcoinPanel({ reloadKey = 0 }) {
     return dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : null;
   }, [upbitRows, globalRows]);
 
+  // The first date both series have, and how many days back that is: the 'Max' period.
+  const chartStart = useMemo(() => {
+    if (!upbitRows.length || !globalRows.length) return '';
+    return upbitRows[0].t > globalRows[0].t ? upbitRows[0].t : globalRows[0].t;
+  }, [upbitRows, globalRows]);
+  const maxDays = chartStart ? Math.ceil((Date.now() - Date.parse(`${chartStart}T00:00:00Z`)) / 86_400_000) + 1 : MAX_DAYS;
+
   const [days, setDays] = useState(365);
   const [draft, setDraft] = useState('365');
 
@@ -108,7 +122,7 @@ export default function BitcoinPanel({ reloadKey = 0 }) {
   const applyDraft = () => {
     const n = Math.round(Number(draft));
     if (!n || n < 1) return;
-    setDays(Math.min(n, MAX_DAYS));
+    setDays(Math.min(n, maxDays));
   };
 
   if (err && !data) return <div className="panel"><h2>{t('Bitcoin')}</h2><div className="error">{t('Failed: {err}', { err })}</div></div>;
@@ -148,7 +162,7 @@ export default function BitcoinPanel({ reloadKey = 0 }) {
           <div style={{ fontSize: 12, marginTop: 4 }}>
             {t('30d:')} <span className={tone(upbit.return_30d)}>{fmtPct(upbit.return_30d)}</span>
           </div>
-          <AvgBlock avgs={upbitAvgs} current={upbit.latest_krw} />
+          <AvgBlock avgs={upbitAvgs} current={upbit.latest_krw} tenYears={spansTenYears(upbitRows)} />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -174,7 +188,7 @@ export default function BitcoinPanel({ reloadKey = 0 }) {
           <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>
             ≈ {t('{v} KRW at today\'s rate', { v: fmtNum(global.latest_krw, 0) })}
           </div>
-          <AvgBlock avgs={globalAvgs} current={global.latest_krw} />
+          <AvgBlock avgs={globalAvgs} current={global.latest_krw} tenYears={spansTenYears(globalRows)} />
         </div>
 
         <div>
@@ -192,19 +206,25 @@ export default function BitcoinPanel({ reloadKey = 0 }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginTop: 16 }}>
         <h3 style={{ margin: 0 }}>{t('Price Trend')}</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {PRESETS.map(p => (
-            <button
-              key={p.label}
-              className={`btn ${days === p.days ? '' : 'ghost'}`}
-              onClick={() => { setDays(p.days); setDraft(String(p.days)); }}
-            >
-              {t(p.label)}
-            </button>
-          ))}
+          {PRESETS.map(p => {
+            const d = p.days ?? maxDays;
+            // A preset longer than the history is the same as Max: hide it.
+            if (p.days != null && p.days >= maxDays) return null;
+            return (
+              <button
+                key={p.label}
+                className={`btn ${days === d ? '' : 'ghost'}`}
+                onClick={() => { setDays(d); setDraft(String(d)); }}
+                title={p.days == null ? t('All history both prices cover, from {date}', { date: chartStart }) : undefined}
+              >
+                {t(p.label)}
+              </button>
+            );
+          })}
           <input
             type="number"
             min={1}
-            max={MAX_DAYS}
+            max={maxDays}
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') applyDraft(); }}
@@ -299,12 +319,14 @@ export default function BitcoinPanel({ reloadKey = 0 }) {
   );
 }
 
-// Compact 1Y/3Y/5Y average list (KRW) with the current price's deviation from each.
-function AvgBlock({ avgs, current }) {
+// Compact 1Y/3Y/5Y(/10Y) average list (KRW) with the current price's deviation from each.
+// The 10Y row shows only for a series with ten years of history (`tenYears`).
+function AvgBlock({ avgs, current, tenYears = false }) {
   const rows = [
     ['1Y avg', avgs.y1],
     ['3Y avg', avgs.y3],
     ['5Y avg', avgs.y5],
+    ...(tenYears ? [['10Y avg', avgs.y10]] : []),
   ];
   return (
     <div style={{ marginTop: 'auto', paddingTop: 8, borderTop: '1px solid var(--border)' }}>
