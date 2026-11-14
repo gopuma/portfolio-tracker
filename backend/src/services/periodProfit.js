@@ -306,20 +306,28 @@ export async function yearReview(portfolioId, currencies, rates, { year, today =
   for (const base of currencies) {
     const toBase = actual(base);
     const whole = run(toBase);
+    // Each holding's profit, and the part of it its investment earned with rates held at the
+    // start (`investment`); the rest (`fx`) is the exchange rate's doing.
     const bySymbol = symbols.map(symbol => {
-      const r = run(toBase, txns.filter(t => t.symbol === symbol));
-      const currency = txns.find(t => t.symbol === symbol)?.currency;
+      const rows = txns.filter(t => t.symbol === symbol);
+      const r = run(toBase, rows);
+      const k = run(fixed(base), rows);
+      const currency = rows[0]?.currency;
       return {
         symbol, name: names.get(symbol) || symbol, currency,
         profit: r.profit, dividends: r.dividends, invested: r.invested,
         start_value: r.start_value, bought: r.bought, end_value: r.end_value,
+        investment: k.profit, investment_dividends: k.dividends, fx: r.profit - k.profit,
       };
-    }).filter(r => r.invested > 0 || r.end_value > 0).sort((a, b) => b.profit - a.profit);
+    }).filter(r => r.invested > 0 || r.end_value > 0).sort((a, b) => b.investment - a.investment);
     const f = run(fixed(base));
     out[base] = {
       ...whole,
       by_symbol: bySymbol,
-      fixed_fx: { profit: f.profit, return: f.return },
+      // The year with every rate held at the prior Dec 31's: what the investments earned in
+      // their own markets (price change + dividends). profit − this = the exchange-rate effect.
+      fixed_fx: { profit: f.profit, return: f.return, price: f.price_and_fx, dividends: f.dividends },
+      fx_effect: whole.profit - f.profit,
       cash: cashFlows(txns, start, end, toBase),
     };
   }

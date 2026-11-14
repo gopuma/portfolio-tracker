@@ -195,6 +195,11 @@ tr:hover td { background: var(--panel-2); }
 .yr-bar.pos { background: var(--green); opacity: .6; }
 .yr-bar.neg { background: var(--red); opacity: .6; }
 .yr-val { text-align: right; font-variant-numeric: tabular-nums; }
+.yr-bar.fx { background: var(--accent); opacity: .55; }
+.yr-fx-row { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); font-weight: 600; }
+.dr-table .dr-subhead td { background: var(--panel-2); font-weight: 600; color: var(--text-dim); font-size: 13px; }
+.dr-table .dr-fx td:first-child { color: var(--accent); }
+.dr-table .dr-total td { border-top: 2px solid var(--text-dim); }
 @media (max-width: 700px) {
   .doc-review { padding: 16px; }
   .dr-table { display: block; overflow-x: auto; }
