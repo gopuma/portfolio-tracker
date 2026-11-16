@@ -7,7 +7,7 @@ export const KO = {
   "Overview": "개요",
   "Portfolios": "포트폴리오",
   "Stress Test": "스트레스 테스트",
-  "Financial Independence": "경제적 독립",
+  "Retirement Simulator": "은퇴 시뮬레이션",
   "Research": "리서치",
   "Predictions": "예측",
   "Audit": "데이터 점검",
