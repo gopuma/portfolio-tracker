@@ -30,7 +30,7 @@ export default function App() {
               {t('Stress Test')}
             </NavLink>
             <NavLink to="/financial-independence" className={linkClass}>
-              {t('Financial Independence')}
+              {t('Retirement Simulator')}
             </NavLink>
             <NavLink to="/research" className={linkClass}>
               {t('Research')}
